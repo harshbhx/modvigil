@@ -2,10 +2,10 @@
 
 ## 🚀 PHASE 1: Data Pipeline (Day 1-2)
 - [x] devvit project setup & authenticated
-- [ ] `src/server/redis.ts` helpers created
-- [ ] `src/server/pipeline.ts` logic implemented
-- [ ] `src/main.ts` trigger registration completed
-- [ ] Verified mod actions are capturing to Redis
+- [x] `src/server/redis.ts` helpers created
+- [x] `src/server/pipeline.ts` logic implemented
+- [x] `src/main.tsx` trigger registration completed
+- [x] Verified mod actions are capturing to Redis
 
 ## 📊 PHASE 2: Dashboard UI (Day 3-4)
 - [ ] `src/client/App.tsx` shell with mod-check

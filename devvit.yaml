@@ -1,8 +1,7 @@
-name: modvigil
+name: mod-vigil
 version: 0.0.1
 description: Real-time moderation analytics and automation dashboard
 runtime: node20
-
 permissions:
   - modMail
   - modLog
@@ -10,28 +9,25 @@ permissions:
   - privateMessages
   - identity
   - read
-
 triggers:
   - event: ModAction
-    handler: src/main.ts
+    handler: src/main.tsx
   - event: AppInstall
-    handler: src/main.ts
+    handler: src/main.tsx
   - event: AppUpgrade
-    handler: src/main.ts
-
+    handler: src/main.tsx
 scheduledJobs:
   - name: spikeChecker
   - name: weeklyDigest
   - name: baselineUpdater
-
 settings:
   - name: spikeThreshold
-    label: "Spike Alert Threshold (default: 3.0)"
+    label: 'Spike Alert Threshold (default: 3.0)'
     type: number
-    defaultValue: 3.0
+    defaultValue: 3
     scope: installation
   - name: transparencyMode
-    label: "Public Transparency Mode"
+    label: Public Transparency Mode
     type: boolean
     defaultValue: false
     scope: installation
