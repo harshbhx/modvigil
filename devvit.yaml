@@ -1,0 +1,23 @@
+name: modvigil
+version: 0.0.1
+description: Real-time moderation analytics and automation dashboard
+
+permissions:
+  - modActions
+  - modMail
+  - modContributors
+  - posts
+  - users
+
+triggers:
+  - onModAction
+  - onAppInstall
+  - onAppUpgrade
+
+scheduledJobs:
+  - name: spikeChecker
+    cron: "*/15 * * * *"
+  - name: weeklyDigest
+    cron: "0 9 * * 1"
+  - name: baselineUpdater
+    cron: "0 * * * *"

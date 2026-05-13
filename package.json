@@ -1,0 +1,20 @@
+{
+  "name": "modvigil",
+  "version": "0.0.1",
+  "license": "BSD-3-Clause",
+  "type": "module",
+  "scripts": {
+    "devvit": "devvit",
+    "build": "devvit bundle",
+    "upload": "devvit upload",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@devvit/public-api": "latest"
+  },
+  "devDependencies": {
+    "@devvit/cli": "latest",
+    "typescript": "latest",
+    "vitest": "latest"
+  }
+}
