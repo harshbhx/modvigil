@@ -1,78 +1,77 @@
-import { Devvit } from '@devvit/public-api';
+import { onModAction, onAppInstall, onAppUpgrade, scheduler } from '@devvit/web/server';
 
 // 1. ModAction trigger
-Devvit.addTrigger({
-  event: 'ModAction',
-  onEvent: async (event, context) => {
-    console.log('Mod action detected:', event.action);
+onModAction(async (event) => {
+  try {
+    const { action, moderator, subreddit } = event;
+    console.log(`Mod action detected in r/${subreddit?.name}: ${action} by u/${moderator?.name}`);
     // TODO: Implement pipeline.ts logic
-  },
+  } catch (error) {
+    console.error('Error in onModAction trigger:', error);
+  }
 });
 
 // 2. AppInstall trigger
-Devvit.addTrigger({
-  event: 'AppInstall',
-  onEvent: async (event, context) => {
-    console.log('App installed in subreddit');
+onAppInstall(async (event) => {
+  try {
+    const { subreddit } = event;
+    console.log(`App installed in r/${subreddit?.name}`);
+    
+    // Schedule recurring jobs
+    await scheduler.runJob({ name: 'spikeChecker', cron: '*/15 * * * *' });
+    await scheduler.runJob({ name: 'baselineUpdater', cron: '0 * * * *' });
+    await scheduler.runJob({ name: 'weeklyDigest', cron: '0 9 * * 1' });
+    
     // TODO: Send welcome modmail
-  },
+  } catch (error) {
+    console.error('Error in onAppInstall trigger:', error);
+  }
 });
 
-// 3. Scheduler jobs
-Devvit.addSchedulerJob({
+// 3. AppUpgrade trigger
+onAppUpgrade(async (event) => {
+  try {
+    console.log('App upgraded');
+  } catch (error) {
+    console.error('Error in onAppUpgrade trigger:', error);
+  }
+});
+
+// 4. Scheduler jobs registration
+scheduler.addJob({
   name: 'spikeChecker',
-  onRun: async (event, context) => {
-    console.log('Running spike checker...');
-    // TODO: Implement alerts.ts logic
+  onRun: async (event) => {
+    try {
+      console.log('Running spike checker...');
+      // TODO: Implement alerts.ts logic
+    } catch (error) {
+      console.error('Error in spikeChecker job:', error);
+    }
   },
 });
 
-Devvit.addSchedulerJob({
-  name: 'weeklyDigest',
-  onRun: async (event, context) => {
-    console.log('Running weekly digest...');
-    // TODO: Implement digest.ts logic
-  },
-});
-
-Devvit.addSchedulerJob({
+scheduler.addJob({
   name: 'baselineUpdater',
-  onRun: async (event, context) => {
-    console.log('Updating baselines...');
-    // TODO: Implement baseline logic
+  onRun: async (event) => {
+    try {
+      console.log('Updating baselines...');
+    } catch (error) {
+      console.error('Error in baselineUpdater job:', error);
+    }
   },
 });
 
-// 4. Dashboard Web View
-Devvit.addCustomPostType({
-  name: 'ModVigil Dashboard',
-  render: (context) => {
-    return (
-      <vstack height="100%" width="100%" alignment="center middle">
-        <text size="xlarge">ModVigil Dashboard Loading...</text>
-      </vstack>
-    );
+scheduler.addJob({
+  name: 'weeklyDigest',
+  onRun: async (event) => {
+    try {
+      console.log('Running weekly digest...');
+      // TODO: Implement digest.ts logic
+    } catch (error) {
+      console.error('Error in weeklyDigest job:', error);
+    }
   },
 });
 
-// 5. Menu items
-Devvit.addMenuItem({
-  location: 'subreddit',
-  label: '📊 Open ModVigil Dashboard',
-  onPress: async (event, context) => {
-    const { reddit, ui } = context;
-    const subreddit = await reddit.getCurrentSubreddit();
-    await reddit.submitPost({
-      title: 'ModVigil Analytics Dashboard',
-      subredditName: subreddit.name,
-      preview: (
-        <vstack height="100%" width="100%" alignment="center middle">
-          <text size="xlarge">ModVigil Dashboard</text>
-        </vstack>
-      ),
-    });
-    ui.showToast('Dashboard post created!');
-  },
-});
-
-export default Devvit;
+// TODO: Add Custom Post Type for Dashboard
+// TODO: Add Menu Items

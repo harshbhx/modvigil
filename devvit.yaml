@@ -1,23 +1,37 @@
 name: modvigil
 version: 0.0.1
 description: Real-time moderation analytics and automation dashboard
+runtime: node20
 
 permissions:
-  - modActions
   - modMail
+  - modLog
   - modContributors
-  - posts
-  - users
+  - privateMessages
+  - identity
+  - read
 
 triggers:
-  - onModAction
-  - onAppInstall
-  - onAppUpgrade
+  - event: ModAction
+    handler: src/main.ts
+  - event: AppInstall
+    handler: src/main.ts
+  - event: AppUpgrade
+    handler: src/main.ts
 
 scheduledJobs:
   - name: spikeChecker
-    cron: "*/15 * * * *"
   - name: weeklyDigest
-    cron: "0 9 * * 1"
   - name: baselineUpdater
-    cron: "0 * * * *"
+
+settings:
+  - name: spikeThreshold
+    label: "Spike Alert Threshold (default: 3.0)"
+    type: number
+    defaultValue: 3.0
+    scope: installation
+  - name: transparencyMode
+    label: "Public Transparency Mode"
+    type: boolean
+    defaultValue: false
+    scope: installation

@@ -5,16 +5,16 @@
   "type": "module",
   "scripts": {
     "devvit": "devvit",
-    "build": "devvit bundle",
     "upload": "devvit upload",
     "test": "vitest run"
   },
   "dependencies": {
-    "@devvit/public-api": "latest"
+    "@devvit/public-api": "0.12.23",
+    "@devvit/web": "0.12.23"
   },
   "devDependencies": {
-    "@devvit/cli": "latest",
-    "typescript": "latest",
-    "vitest": "latest"
+    "@devvit/cli": "0.12.23",
+    "typescript": "5.4.5",
+    "vitest": "1.6.0"
   }
 }
