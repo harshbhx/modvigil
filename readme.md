@@ -19,13 +19,13 @@ u/spammer — banned — 3 hours ago
 
 No graphs. No patterns. No alerts. No automation. Every subreddit from 500 to 5,000,000 members has had this exact problem since Reddit was created.
 
-**ModSentinel fixes that.**
+**ModVigil fixes that.**
 
 ---
 
 ## What It Does
 
-ModSentinel silently captures every mod action in your subreddit and turns it into actionable intelligence — not just data.
+ModVigil silently captures every mod action in your subreddit and turns it into actionable intelligence — not just data.
 
 ### 📊 Real-Time Dashboard
 - **7-day bar chart** — removals, approvals, bans broken down by day
@@ -44,30 +44,30 @@ Runs every 15 minutes. If removal rate hits 3× the normal baseline for that hou
 No auto-banning. Humans stay in control.
 
 ### 📬 Weekly Digest
-Every Monday at 9am, ModSentinel auto-posts a formatted mod report: top rule broken, most active mod, dead zone hours, week-over-week comparison. Optional public transparency mode.
+Every Monday at 9am, ModVigil auto-posts a formatted mod report: top rule broken, most active mod, dead zone hours, week-over-week comparison. Optional public transparency mode.
 
 ---
 
 ## Why It Wins
 
-| Criterion | How ModSentinel Scores |
-+|---|---|
-+| Community Impact | Saves mod teams hours weekly via automation |
-+| Polish | One-click install, zero config, works immediately |
-+| Reliable UX | Zero external APIs — cannot break during judge testing |
-+| Ecosystem Impact | Every subreddit on Reddit can use this — nothing like it exists |
+| Criterion | How ModVigil Scores |
+|---|---|
+| Community Impact | Saves mod teams hours weekly via automation |
+| Polish | One-click install, zero config, works immediately |
+| Reliable UX | Zero external APIs — cannot break during judge testing |
+| Ecosystem Impact | Every subreddit on Reddit can use this — nothing like it exists |
 
 ---
 
 ## Tech Stack
 
 | Layer | Technology |
-+|---|---|
-+| Platform | [Devvit](https://developers.reddit.com) — Reddit's developer platform |
-+| Language | TypeScript (strict) + React |
-+| Database | Devvit Redis (built-in, free, zero setup) |
-+| Hosting | Reddit servers (zero cost) |
-+| External APIs | **None** |
+|---|---|
+| Platform | [Devvit](https://developers.reddit.com) — Reddit's developer platform |
+| Language | TypeScript (strict) + React |
+| Database | Devvit Redis (built-in, free, zero setup) |
+| Hosting | Reddit servers (zero cost) |
+| External APIs | **None** |
 
 ---
 
@@ -76,14 +76,15 @@ Every Monday at 9am, ModSentinel auto-posts a formatted mod report: top rule bro
 ```
 mod-vigil/
 ├── devvit.yaml              # App config, permissions, triggers
+├── package.json             # v0.0.1
 ├── src/
+│   ├── main.tsx             # Entry point — registers all triggers & jobs
 │   ├── server/
-│   │   ├── index.ts         # Entry point — registers all triggers & jobs
 │   │   ├── redis.ts         # All Redis helpers (single source of truth)
 │   │   ├── pipeline.ts      # onModAction handler
-│   │   ├── alerts.ts        # Spike detection + modmail
-│   │   ├── warnings.ts      # Automated user warnings
-│   │   └── digest.ts        # Weekly digest generator
+│   │   ├── alerts.ts        # Spike detection + modmail [PLANNED]
+│   │   ├── warnings.ts      # Automated user warnings [PLANNED]
+│   │   └── digest.ts        # Weekly digest generator [PLANNED]
 │   └── client/
 │       ├── App.tsx           # Dashboard shell (mod-only)
 │       ├── Charts.tsx        # Bar charts (pure SVG)
@@ -111,23 +112,19 @@ npm install -g devvit
 devvit login
 
 # Clone and install
-git clone https://github.com/harshubhanushali07/modsentinel
-cd modsentinel
+git clone https://github.com/harshubhanushali07/modvigil
+cd modvigil
 npm install
 
 # Start development server
-npm run dev
+devvit playtest r/your_test_sub
 ```
-
-Then navigate to your test subreddit on Reddit. A new ModSentinel post will appear automatically.
 
 ### Deploy
 
 ```bash
 devvit upload
 ```
-
-Reddit reviews all apps before they go live. Submit at least 3 days before your deadline.
 
 ---
 
@@ -140,7 +137,7 @@ Mod takes action (remove/ban/approve)
          ↓
   pipeline.ts captures event
          ↓
-  redis.ts stores with timestamp
+  redis.ts stores with timestamp (zAdd)
          ↓
   ┌──────────────────────────────────┐
   │                                  │
@@ -148,21 +145,6 @@ Mod takes action (remove/ban/approve)
 Dashboard reads data          Scheduler runs every 15min
 (charts, heatmap,             checks for spike anomalies
  leaderboard, score)          sends modmail if 3× baseline
-```
-
----
-
-## Redis Key Schema
-
-```
-actions:{YYYY-MM-DD}:{HH}            → ModAction[] (JSON list)
-actions:total:{YYYY-MM-DD}           → hash of action type counts
-mod:activity:{username}:{YYYY-MM-DD} → hash of mod's daily counts
-mod:lastactive:{username}            → timestamp
-spike:baseline:{dayOfWeek}:{hour}    → rolling average (string)
-spike:lastfired:{subredditId}        → timestamp
-warn:count:{subredditId}:{userId}    → removal count (string)
-digest:lastrun:{subredditId}         → timestamp
 ```
 
 ---

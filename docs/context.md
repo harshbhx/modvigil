@@ -17,3 +17,11 @@
 - **[05:45] Redis Runtime Fix:** Resolved `TypeError: this.redis.lPush is not a function` by switching to `zAdd`.
 - **[06:00] Configuration Fix:** Enabled Redis plugin via `Devvit.configure({ redis: true })` to resolve "Redis is not enabled" error.
 - **[06:15] END-TO-END SUCCESS:** Confirmed real-time mod actions (remove, sticky, etc.) are being captured, processed by the pipeline, and stored in Redis without errors. Foundation is 100% solid.
+
+### 2026-05-15 — Day 2
+- **[17:00] Audit Initiation:** Performed a full-system audit. Created `docs/AUDIT_REPORT.md` to track gaps.
+- **[17:30] Context Expansion:** Created `docs/AI_CONTEXT_MASTER.md` to help future AI agents maintain project continuity.
+- **[17:45] Version Sync:** Updated `package.json` to version `0.0.1` to match `devvit.yaml`.
+- **[18:00] Hardening:** Wrapped all registered triggers (`ModAction`, `AppInstall`) and jobs (`spikeChecker`) in `try/catch` blocks to comply with strict coding rules.
+- **[18:15] Leaderboard Logic:** Replaced dummy leaderboard data in `redis.ts` with real-time `zIncrBy` tracking.
+- **[18:30] Documentation Refresh:** Updated all master docs (`GEMINI.md`, `CURRENT_STATE.md`, `readme.md`) to reflect the latest audit findings and fixes.
