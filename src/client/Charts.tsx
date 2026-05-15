@@ -12,35 +12,42 @@ interface BarChartProps {
 }
 
 /**
- * A pure SVG bar chart for ModVigil.
- * No external dependencies.
+ * A "Beast Mode" SVG bar chart for ModVigil.
+ * High fidelity, animated, and interactive.
  */
 export const BarChart: React.FC<BarChartProps> = ({ data, title, color = '#FF4500' }) => {
-  const width = 400;
-  const height = 200;
-  const padding = 40;
-  const chartWidth = width - padding * 2;
-  const chartHeight = height - padding * 2;
+  const width = 450;
+  const height = 240;
+  const paddingX = 40;
+  const paddingY = 40;
+  const chartWidth = width - paddingX * 2;
+  const chartHeight = height - paddingY * 2;
 
   const maxValue = Math.max(...data.map(d => d.value), 1);
-  const barWidth = data.length > 0 ? chartWidth / data.length : 0;
+  const barWidth = data.length > 0 ? (chartWidth / data.length) * 0.7 : 0;
+  const barGap = data.length > 0 ? (chartWidth / data.length) * 0.3 : 0;
 
   return (
-    <div className="chart-container" style={{ marginBottom: '20px' }}>
-      <h3 style={{ margin: '0 0 10px 0', fontSize: '16px', color: '#878A8C' }}>{title}</h3>
-      <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} style={{ background: '#FFFFFF', borderRadius: '8px', border: '1px solid #EDEFF1' }}>
+    <div className="chart-container">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+        <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 'bold', color: '#878A8C', textTransform: 'uppercase', letterSpacing: '1px' }}>{title}</h3>
+        <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#FF4500' }}>Live Action Ticker</div>
+      </div>
+      <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} style={{ background: '#FFFFFF', borderRadius: '12px' }}>
         <style>{`
-          .bar { transition: fill 0.2s, opacity 0.2s; cursor: pointer; }
-          .bar:hover { fill: #FF581A; opacity: 0.8; }
+          .bar { transition: height 0.5s ease-out, y 0.5s ease-out, fill 0.2s; cursor: pointer; }
+          .bar:hover { fill: #0079D3; }
+          .grid-line { stroke: #EDEFF1; stroke-dasharray: 4, 4; }
+          .axis-text { fill: #878A8C; font-weight: 600; }
         `}</style>
         
         {/* Y-axis grid lines */}
         {[0, 0.25, 0.5, 0.75, 1].map((p, i) => {
-          const y = padding + chartHeight * (1 - p);
+          const y = paddingY + chartHeight * (1 - p);
           return (
             <g key={i}>
-              <line x1={padding} y1={y} x2={width - padding} y2={y} stroke="#EDEFF1" strokeWidth="1" />
-              <text x={padding - 5} y={y + 4} textAnchor="end" fontSize="10" fill="#878A8C">
+              <line className="grid-line" x1={paddingX} y1={y} x2={width - paddingX} y2={y} strokeWidth="1" />
+              <text className="axis-text" x={paddingX - 10} y={y + 4} textAnchor="end" fontSize="10">
                 {Math.round(maxValue * p)}
               </text>
             </g>
@@ -49,37 +56,63 @@ export const BarChart: React.FC<BarChartProps> = ({ data, title, color = '#FF450
 
         {/* Bars */}
         {data.map((d, i) => {
-          const barHeight = (d.value / maxValue) * chartHeight;
-          const x = padding + i * barWidth + barWidth * 0.1;
-          const y = height - padding - barHeight;
-          const w = barWidth * 0.8;
+          const h = (d.value / maxValue) * chartHeight;
+          const x = paddingX + i * (barWidth + barGap) + barGap / 2;
+          const y = height - paddingY - h;
 
           return (
             <g key={i}>
+              {/* Ghost Bar (Background for scale) */}
+              <rect
+                x={x}
+                y={paddingY}
+                width={barWidth}
+                height={chartHeight}
+                fill="#F6F7F8"
+                rx="4"
+              />
+              {/* Actual Data Bar */}
               <rect
                 className="bar"
                 x={x}
                 y={y}
-                width={w}
-                height={barHeight}
+                width={barWidth}
+                height={h}
                 fill={color}
-                rx="2"
+                rx="4"
               >
                 <title>{`${d.label}: ${d.value} actions`}</title>
               </rect>
+              {/* Value Label */}
+              {d.value > 0 && (
+                <text
+                  x={x + barWidth / 2}
+                  y={y - 8}
+                  textAnchor="middle"
+                  fontSize="11"
+                  fontWeight="bold"
+                  fill={color}
+                  style={{ opacity: 0.8 }}
+                >
+                  {d.value}
+                </text>
+              )}
+              {/* X-axis Label */}
               <text
-                x={x + w / 2}
-                y={height - padding + 15}
+                x={x + barWidth / 2}
+                y={height - paddingY + 20}
                 textAnchor="middle"
-                fontSize="10"
-                fill="#878A8C"
-                transform={`rotate(45, ${x + w / 2}, ${height - padding + 15})`}
+                fontSize="11"
+                className="axis-text"
               >
                 {d.label}
               </text>
             </g>
           );
         })}
+
+        {/* Base line */}
+        <line x1={paddingX} y1={height - paddingY} x2={width - paddingX} y2={height - paddingY} stroke="#878A8C" strokeWidth="2" strokeLinecap="round" />
       </svg>
     </div>
   );
