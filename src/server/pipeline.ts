@@ -61,8 +61,8 @@ export async function handleModAction(event: ModAction, context: TriggerContext)
         const newCount = await context.redis.incrBy(warnCountKey, 1);
         await context.redis.expire(warnCountKey, 30 * 24 * 60 * 60);
 
-        // 2. Track removal reasons if available
-        const reason = event.details || action; // Fallback to action if no explicit details
+        // 2. Track removal reasons (uses action type as ModAction events don't include reason text)
+        const reason = action; // Action type like "removelink", "removecomment", etc.
         await context.redis.hIncrBy(`${subredditId}:actions:reasons:${dateStr}`, reason, 1);
         await context.redis.expire(`${subredditId}:actions:reasons:${dateStr}`, 60 * 60 * 24 * 90);
         

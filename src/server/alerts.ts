@@ -73,11 +73,19 @@ export async function checkForSpike(event: any, context: any): Promise<void> {
     // 3. Get threshold from settings
     const threshold = (await context.settings.get('spikeThreshold') as number) || 3.0;
 
-    console.log(`🔍 [ModVigil Alerts] Checking spike: Current=${currentCount}, Baseline=${baseline.toFixed(2)}, Threshold=${threshold}x`);
+    // 4. Scale baseline by elapsed time in current hour
+    // The baseline represents a full 60-minute average, but we may only be
+    // partway through the hour. Scale it proportionally so we can detect
+    // spikes in real-time rather than only at the end of each hour.
+    const currentMinute = now.getUTCMinutes();
+    const elapsedRatio = (currentMinute + 1) / 60;
+    const scaledBaseline = baseline * elapsedRatio;
+
+    console.log(`🔍 [ModVigil Alerts] Checking spike: Current=${currentCount}, Baseline=${baseline.toFixed(2)}, Scaled=${scaledBaseline.toFixed(2)}, Threshold=${threshold}x`);
 
     // Only alert if we have a baseline and current count is significantly higher
     // We also add a minimum count (e.g., 5) to avoid alerting on very small numbers
-    if (baseline > 0 && currentCount >= 5 && currentCount >= (baseline * threshold)) {
+    if (baseline > 0 && currentCount >= 5 && currentCount >= (scaledBaseline * threshold)) {
       
       // 4. Check cooldown
       const lastFiredKey = `spike:lastfired:${subredditId}`;
@@ -92,19 +100,19 @@ export async function checkForSpike(event: any, context: any): Promise<void> {
 
       // 5. Fire alert!
       console.log('🚨 [ModVigil Alerts] SPIKE DETECTED! Sending modmail...');
-      
+
       await context.reddit.sendPrivateMessage({
-        to: `r/${context.subredditName}`,
+        to: `r/${subreddit.name}`,
         subject: '🚨 ModVigil Alert: Activity Spike Detected',
-        text: `ModVigil has detected an unusual spike in moderation activity in r/${context.subredditName}.
-        
+        text: `ModVigil has detected an unusual spike in moderation activity in r/${subreddit.name}.
+
 **Current Hour:** ${currentCount} actions
 **Expected (Baseline):** ${baseline.toFixed(2)} actions
 **Threshold:** ${threshold}x
-        
+
 This could indicate a raid, a highly controversial post, or an influx of rule-breaking content.
-        
-[📊 Open ModVigil Dashboard](https://www.reddit.com/r/${context.subredditName}/about/log)`, 
+
+[📊 Open ModVigil Dashboard](https://www.reddit.com/r/${subreddit.name}/about/log)`,
         // Note: Real dashboard URL would be the permalink to the dashboard post
       });
 

@@ -97,16 +97,33 @@ Devvit.addCustomPostType({
           onMessage={async (msg: any) => {
             if (msg.type === 'GET_DASHBOARD_DATA') {
               try {
+                // Security gate: moderators only
+                const modPerms = await context.reddit.getModeratorPermissions();
+                if (!modPerms || modPerms.length === 0) {
+                  context.ui.webView.postMessage('modvigil-webview', {
+                    type: 'ERROR',
+                    payload: { message: 'Access denied: Moderators only' },
+                  });
+                  return;
+                }
+
                 const subreddit = await context.reddit.getCurrentSubreddit();
                 const subredditId = subreddit.id;
                 const db = new ModVigilRedis(context.redis, subredditId);
 
-                const [dailyTotals, heatmapData, leaderboard, healthScore] = await Promise.all([
+                const dateStr = new Date().toISOString().split('T')[0];
+                const [dailyTotals, heatmapData, leaderboard, healthScore, approvalRate, topReasons] = await Promise.all([
                   db.getLast7DaysTotals(),
                   db.getHeatmapData(),
                   db.getLeaderboard(),
                   db.getHealthScore(),
+                  db.getApprovalRate(dateStr),
+                  db.getTopRemovalReasons(dateStr),
                 ]);
+
+                const todayTotals = await db.getDailyTotals(dateStr);
+                const totalActionsToday = Object.values(todayTotals).reduce((sum, v) => sum + (parseInt(v) || 0), 0);
+                const topRemovalReason = topReasons.length > 0 ? topReasons[0].reason : null;
 
                 context.ui.webView.postMessage('modvigil-webview', {
                   type: 'DASHBOARD_DATA',
@@ -117,9 +134,9 @@ Devvit.addCustomPostType({
                     healthScore,
                     ghostMods: [],
                     lastActionAt: 0,
-                    totalActionsToday: 0,
-                    approvalRate: 0,
-                    topRemovalReason: null,
+                    totalActionsToday,
+                    approvalRate,
+                    topRemovalReason,
                   },
                 });
               } catch (error) {
@@ -127,6 +144,54 @@ Devvit.addCustomPostType({
                 context.ui.webView.postMessage('modvigil-webview', {
                   type: 'ERROR',
                   payload: { message: 'Failed to load dashboard data' },
+                });
+              }
+            }
+
+            if (msg.type === 'NUDGE_GHOST_MODS') {
+              try {
+                // Security gate: moderators only
+                const modPerms = await context.reddit.getModeratorPermissions();
+                if (!modPerms || modPerms.length === 0) {
+                  context.ui.webView.postMessage('modvigil-webview', {
+                    type: 'ERROR',
+                    payload: { message: 'Access denied: Moderators only' },
+                  });
+                  return;
+                }
+
+                const { ghostMods } = msg.payload;
+                const subreddit = await context.reddit.getCurrentSubreddit();
+
+                for (const mod of ghostMods) {
+                  await context.reddit.sendPrivateMessage({
+                    to: mod.username,
+                    subject: '👻 ModVigil: Activity Check-In',
+                    text: `Hi u/${mod.username},
+
+This is an automated message from ModVigil, the moderation analytics tool for r/${subreddit.name}.
+
+Our system shows you haven't taken any moderation actions in the past ${mod.lastActiveDays} days. We wanted to check in and see if:
+- You're still interested in moderating r/${subreddit.name}
+- You need any support or have questions
+- Your permissions need to be adjusted
+
+No action is required if you're just taking a break. This is just a friendly check-in from the mod team.
+
+Best regards,
+The r/${subreddit.name} Mod Team (via ModVigil)`,
+                  });
+                }
+
+                context.ui.webView.postMessage('modvigil-webview', {
+                  type: 'NUDGE_SUCCESS',
+                  payload: { count: ghostMods.length },
+                });
+              } catch (error) {
+                console.error('❌ [ModVigil] Error nudging ghost mods:', error);
+                context.ui.webView.postMessage('modvigil-webview', {
+                  type: 'ERROR',
+                  payload: { message: 'Failed to send nudge messages' },
                 });
               }
             }
@@ -140,6 +205,7 @@ Devvit.addCustomPostType({
 // 4. Menu Items
 Devvit.addMenuItem({
   location: 'subreddit',
+  forModeratorsOnly: true,
   label: '📊 Open ModVigil Dashboard',
   onPress: async (_event, context) => {
     const subreddit = await context.reddit.getCurrentSubreddit();

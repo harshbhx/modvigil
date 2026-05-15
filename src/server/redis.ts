@@ -21,7 +21,7 @@ export class ModVigilRedis {
     try {
       const now = new Date();
       const dateStr = now.toISOString().split('T')[0];
-      const hourStr = now.getUTCHours().toString();
+      const hourStr = String(now.getUTCHours()).padStart(2, '0');
       const timestamp = now.getTime();
 
       // 1. Store the raw action in a Sorted Set (ordered by timestamp)
@@ -31,6 +31,11 @@ export class ModVigilRedis {
         score: timestamp
       });
       await this.redis.expire(actionKey, 60 * 60 * 24 * 90); // Keep 90 days
+
+      // Also update heatmap hash for efficient retrieval (reduces 168 calls to 7)
+      const heatmapKey = `${this.subredditId}:heatmap:${dateStr}`;
+      await this.redis.hIncrBy(heatmapKey, hourStr, 1);
+      await this.redis.expire(heatmapKey, 60 * 60 * 24 * 90);
 
       // 2. Increment daily totals for this action type
       const totalKey = `${this.subredditId}:actions:total:${dateStr}`;
@@ -50,9 +55,8 @@ export class ModVigilRedis {
         await this.redis.zIncrBy(`${this.subredditId}:mod:leaderboard`, actionData.moderator.name, 1);
         await this.redis.expire(`${this.subredditId}:mod:leaderboard`, 60 * 60 * 24 * 90);
 
-        // 5. Track moderator in set for ghost detection (using sorted set with score 0)
+        // 5. Track moderator in set for ghost detection (no TTL - keep all mods ever seen)
         await this.redis.zAdd(`${this.subredditId}:mod:all`, { member: actionData.moderator.name, score: 0 });
-        await this.redis.expire(`${this.subredditId}:mod:all`, 60 * 60 * 24 * 90);
       }
     } catch (error) {
       console.error('❌ [ModVigil Redis] Error recording action:', error);
@@ -99,35 +103,31 @@ export class ModVigilRedis {
 
   /**
    * Generates a 7x24 heatmap grid of actions.
-   * OPTIMIZED: Uses Promise.all for parallel Redis calls instead of sequential.
+   * OPTIMIZED: Uses heatmap hash (7 calls) instead of 168 individual zCard calls.
    */
   async getHeatmapData(): Promise<number[][]> {
     try {
       const grid: number[][] = Array(7).fill(0).map(() => Array(24).fill(0));
-
-      // Collect all promises for parallel execution
-      const promises: Promise<{ day: number; hour: number; count: number }>[] = [];
+      const promises: Promise<{ day: number; data: Record<string, string> }>[] = [];
 
       for (let i = 0; i < 7; i++) {
         const d = new Date();
         d.setDate(d.getDate() - i);
         const dateStr = d.toISOString().split('T')[0];
-        const dayOfWeek = (d.getDay() + 6) % 7; // 0 = Mon, 6 = Sun
+        const heatmapKey = `${this.subredditId}:heatmap:${dateStr}`;
 
-        for (let hour = 0; hour < 24; hour++) {
-          const actionKey = `${this.subredditId}:actions:${dateStr}:${hour}`;
-          promises.push(
-            this.redis.zCard(actionKey).then(count => ({ day: dayOfWeek, hour, count }))
-          );
-        }
+        promises.push(
+          this.redis.hGetAll(heatmapKey).then(data => ({ day: i, data }))
+        );
       }
 
-      // Execute all Redis calls in parallel
       const results = await Promise.all(promises);
 
-      // Populate grid with results
-      results.forEach(({ day, hour, count }) => {
-        grid[day][hour] += count;
+      results.forEach(({ day, data }) => {
+        for (let hour = 0; hour < 24; hour++) {
+          const hourStr = String(hour).padStart(2, '0');
+          grid[day][hour] = parseInt(data[hourStr] || '0');
+        }
       });
 
       return grid;
@@ -204,11 +204,11 @@ export class ModVigilRedis {
       const totalActions = Object.values(totals).reduce((sum, v) => sum + (parseInt(v) || 0), 0);
       const approvals = parseInt(approvalData || '0');
 
-      if (totalActions === 0) return 100; // Default to 100 if no actions
+      if (totalActions === 0) return 0; // No data = 0% (not 100%)
       return (approvals / totalActions) * 100;
     } catch (error) {
       console.error('❌ [ModVigil Redis] Error getting approval rate:', error);
-      return 100;
+      return 0; // Error state = 0% (not 100%)
     }
   }
 
@@ -253,7 +253,7 @@ export class ModVigilRedis {
       return Math.round((coverageScore * 0.7) + (volumeScore * 0.3));
     } catch (error) {
       console.error('❌ [ModVigil Redis] Error calculating health score:', error);
-      return 50; // Default to neutral score on error
+      return 0; // Error state = 0 (not 50)
     }
   }
 }

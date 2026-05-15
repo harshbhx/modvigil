@@ -5,6 +5,9 @@ import { BarChart } from './Charts.js';
 import { Heatmap } from './Heatmap.js';
 import { Leaderboard } from './Leaderboard.js';
 import { HealthScore } from './HealthScore.js';
+import { QuickStats } from './QuickStats.js';
+import { HelpModal } from './HelpModal.js';
+import { SettingsModal } from './SettingsModal.js';
 
 interface DashboardData {
   dailyTotals: { label: string; value: number }[];
@@ -12,6 +15,9 @@ interface DashboardData {
   leaderboard: { username: string; count: number }[];
   healthScore: number;
   ghostMods: { username: string; lastActiveDays: number }[];
+  totalActionsToday: number;
+  approvalRate: number;
+  topRemovalReason: string | null;
 }
 
 /**
@@ -21,6 +27,9 @@ interface DashboardData {
 export const App: React.FC = () => {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [showHelp, setShowHelp] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => {
     // 1. Request data from the server
@@ -28,14 +37,30 @@ export const App: React.FC = () => {
 
     // 2. Listen for response
     const handleMessage = (event: MessageEvent) => {
-      if (event.data.type === 'DASHBOARD_DATA') {
+      if (event.data?.type === 'DASHBOARD_DATA') {
         setData(event.data.payload);
         setLoading(false);
       }
+      if (event.data?.type === 'ERROR') {
+        setError(event.data.payload?.message || 'Failed to load dashboard');
+        setLoading(false);
+      }
+      if (event.data?.type === 'NUDGE_SUCCESS') {
+        alert(`✅ Successfully nudged ${event.data.payload.count} inactive moderator(s)`);
+      }
     };
 
+    // 3. Set timeout for request
+    const timeout = setTimeout(() => {
+      setError('Dashboard request timed out. Please refresh.');
+      setLoading(false);
+    }, 10000); // 10 second timeout
+
     window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
+    return () => {
+      window.removeEventListener('message', handleMessage);
+      clearTimeout(timeout);
+    };
   }, []);
 
   if (loading) {
@@ -46,6 +71,24 @@ export const App: React.FC = () => {
         <style>{`
           @keyframes spin { to { transform: rotate(360deg); } }
         `}</style>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={{ padding: '40px', textAlign: 'center', fontFamily: 'sans-serif', backgroundColor: '#DAE0E6', minHeight: '100vh' }}>
+        <div style={{ backgroundColor: 'white', padding: '40px', borderRadius: '16px', boxShadow: '0 8px 16px rgba(0,0,0,0.1)', maxWidth: '600px', margin: '0 auto', border: '1px solid #EDEFF1' }}>
+          <div style={{ fontSize: '48px', marginBottom: '20px' }}>⚠️</div>
+          <h2 style={{ color: '#FF4500', fontWeight: '900', fontSize: '28px' }}>Error Loading Dashboard</h2>
+          <p style={{ color: '#878A8C', lineHeight: '1.6', fontSize: '16px' }}>{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            style={{ marginTop: '20px', padding: '12px 24px', backgroundColor: '#FF4500', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: 'bold', cursor: 'pointer' }}
+          >
+            Refresh Dashboard
+          </button>
+        </div>
       </div>
     );
   }
@@ -83,8 +126,55 @@ export const App: React.FC = () => {
           </div>
           <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#878A8C', fontWeight: '500' }}>Comprehensive Moderation Intelligence Command Center</p>
         </div>
-        <HealthScore score={data.healthScore} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <button
+            onClick={() => setShowSettings(true)}
+            style={{
+              backgroundColor: '#F6F7F8',
+              border: '1px solid #EDEFF1',
+              borderRadius: '8px',
+              padding: '8px 12px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: '600',
+              color: '#1A1A1B',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+            }}
+          >
+            <span style={{ fontSize: '16px' }}>⚙️</span>
+            Settings
+          </button>
+          <button
+            onClick={() => setShowHelp(true)}
+            style={{
+              backgroundColor: '#F6F7F8',
+              border: '1px solid #EDEFF1',
+              borderRadius: '8px',
+              padding: '8px 12px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: '600',
+              color: '#1A1A1B',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+            }}
+          >
+            <span style={{ fontSize: '16px' }}>❓</span>
+            Help
+          </button>
+          <HealthScore score={data.healthScore} />
+        </div>
       </header>
+
+      {/* Quick Stats */}
+      <QuickStats
+        totalActionsToday={data.totalActionsToday}
+        approvalRate={data.approvalRate}
+        topRemovalReason={data.topRemovalReason}
+      />
 
       <main style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
         {/* Ghost Mods High-Impact Alert */}
@@ -98,7 +188,17 @@ export const App: React.FC = () => {
                 <strong style={{ marginLeft: '5px', textDecoration: 'underline' }}>{data.ghostMods.map(m => `u/${m.username}`).join(', ')}</strong>
               </p>
             </div>
-            <button style={{ backgroundColor: '#8B4513', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>View Details</button>
+            <button
+              onClick={() => {
+                window.parent.postMessage({
+                  type: 'NUDGE_GHOST_MODS',
+                  payload: { ghostMods: data.ghostMods }
+                }, '*');
+              }}
+              style={{ backgroundColor: '#8B4513', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}
+            >
+              Nudge Inactive Mods
+            </button>
           </section>
         )}
 
@@ -128,6 +228,21 @@ export const App: React.FC = () => {
         </div>
       </footer>
 
+      {/* Help Modal */}
+      {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <SettingsModal
+          onClose={() => setShowSettings(false)}
+          currentSettings={{
+            spikeThreshold: 3.0,
+            transparencyMode: false,
+            enableWarnings: true,
+          }}
+        />
+      )}
+
       <style>{`
         @keyframes pulse {
           0% { opacity: 1; transform: scale(1); }
@@ -135,6 +250,51 @@ export const App: React.FC = () => {
           100% { opacity: 1; transform: scale(1); }
         }
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800;900&display=swap');
+
+        /* Mobile Responsiveness */
+        @media (max-width: 768px) {
+          body {
+            font-size: 14px;
+          }
+
+          /* Stack grid layouts vertically */
+          [style*="grid-template-columns"] {
+            grid-template-columns: 1fr !important;
+          }
+
+          /* Reduce padding on mobile */
+          header {
+            padding: 16px !important;
+            flex-direction: column !important;
+            align-items: flex-start !important;
+            gap: 12px;
+          }
+
+          h1 {
+            font-size: 22px !important;
+          }
+
+          section {
+            padding: 16px !important;
+          }
+
+          /* Make charts responsive */
+          svg {
+            max-width: 100%;
+            height: auto;
+          }
+        }
+
+        @media (max-width: 480px) {
+          /* Extra small screens */
+          h1 {
+            font-size: 18px !important;
+          }
+
+          [style*="padding: 24px"] {
+            padding: 12px !important;
+          }
+        }
       `}</style>
     </div>
   );

@@ -36,12 +36,12 @@ export const Heatmap: React.FC<HeatmapProps> = ({ data, title }) => {
   };
 
   return (
-    <div className="heatmap-container" style={{ overflowX: 'auto' }}>
+    <div className="heatmap-container" style={{ width: '100%', overflowX: 'auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
         <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 'bold', color: '#878A8C', textTransform: 'uppercase', letterSpacing: '1px' }}>{title}</h3>
         <div style={{ fontSize: '11px', color: '#878A8C' }}>UTC Timescale</div>
       </div>
-      <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{ background: '#FFFFFF', borderRadius: '12px' }}>
+      <svg width="100%" viewBox={`0 0 ${width} ${height}`} style={{ maxWidth: '100%', height: 'auto', minWidth: '320px', background: '#FFFFFF', borderRadius: '12px' }}>
         <style>{`
           .cell { transition: transform 0.2s, stroke 0.2s; cursor: pointer; }
           .cell:hover { transform: scale(1.1); transform-origin: center; stroke: #1A1A1B; stroke-width: 1px; z-index: 10; }
