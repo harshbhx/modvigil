@@ -5,7 +5,7 @@ ModVigil is a real-time moderation analytics and automation dashboard built nati
 
 ## Hackathon Context
 - **Event:** Reddit Mod Tools and Migrated Apps Hackathon
-- **Deadline:** May 27, 2026 — 6:00pm Pacific Time (May 28 6:30am IST)
+- **Deadline:** May 28, 2026 — 6:30 AM IST (Final Milestone)
 - **Category:** Best New Mod Tool
 - **Prize Target:** $10,000 (Best New Mod Tool) + $10,000 (Moderator's Choice)
 - **Builder:** Solo developer, vibe coding with AI assistance
@@ -67,26 +67,35 @@ Automatically flags mods inactive for 30+ days and sends welcome kits to new mod
 
 ---
 
-## 🚀 THE PATH TO BEAST LEVEL (Roadmap & Future Scaling)
+## 🚀 THE BEAST HORIZON: EVOLVING MODVIGIL (Roadmap)
 
-*To be implemented in Q3-Q4 2026 to evolve ModVigil into the ultimate subreddit command center.*
+*The following features represent the "Beast Level" evolution of ModVigil, moving from analytics to predictive community management.*
 
-### 1. ML-Powered Toxicity Forecasting (Beast Mode)
-- **Tech:** Sentiment analysis on post titles/comments.
-- **Goal:** Predict a raid or controversy 30-60 minutes before it happens based on rising linguistic toxicity levels.
+### 1. 🧠 ML-Powered Sentiment & Intent Forecasting
+- **Beast Feature:** Integrate Devvit-side logic to analyze the *content* of removed posts.
+- **Impact:** Predict a raid or controversy 30-60 minutes before it happens by detecting rising linguistic toxicity levels and coordinated keyword usage across the entire sub in real-time.
+- **Timeline:** Q3 2026.
 
-### 2. Timezone-Optimized Recruitment AI
-- **Tech:** 30-day historical coverage analysis.
-- **Goal:** Provide head mods with a "Recruitment Map" showing exactly which UTC timeframes lack human coverage and suggesting users who are active in those slots.
+### 2. 🌍 Timezone-Optimized Recruitment AI
+- **Beast Feature:** Provide head mods with a "Recruitment Map" based on 30-day historical coverage analysis.
+- **Impact:** Automatically identify exactly which UTC timeframes lack human coverage and suggest active users in those slots for moderator promotion.
+- **Timeline:** Q3 2026.
 
-### 3. Real-Time Event Bus (Streaming)
-- **Tech:** Transition from polling to WebSocket-style live streaming.
-- **Goal:** Zero-latency dashboard updates. Mods see a "Live Feed" ticker of every action happening in the sub in real-time.
+### 3. ⚡ Real-Time "Command Center" Event Bus
+- **Beast Feature:** Zero-latency dashboard updates using a server-side event buffer in Redis.
+- **Impact:** Mods see a "Live Feed" ticker of every action happening in the sub in real-time with sub-100ms updates, eliminating the need for manual refreshes.
+- **Timeline:** Q4 2026.
 
-### 4. Cross-Subreddit Network Intelligence
-- **Tech:** Global Redis Set indexing known bad actors across all subreddits running ModVigil.
-- **Goal:** Collaborative defense. If a user is banned for raiding in Sub A, they are automatically flagged (not banned) when they first post in Sub B.
+### 4. 🛡️ Cross-Subreddit Network Intelligence (Global Shield)
+- **Beast Feature:** Global Redis Set indexing known bad actors across all subreddits running ModVigil.
+- **Impact:** Collaborative defense. If a user is banned for raiding in Sub A, they are automatically flagged (not banned) when they first post in Sub B, allowing mods to be proactive.
+- **Timeline:** Q4 2026.
+
+### 5. 🛠️ Proactive AutoMod Optimization
+- **Beast Feature:** Automatic suggestions for AutoMod YAML changes based on common removal reasons.
+- **Impact:** ModVigil identifies that 80% of removals are for "Rule 3" and generates the exact AutoMod code to automate those removals before they even hit the mod log.
 
 ---
 **Last Updated:** May 15, 2026
+**Final Submission Target:** May 28, 2026 (BEAST MODE READY)
 **Release Version:** v1.0.0-Hackathon-Stable
