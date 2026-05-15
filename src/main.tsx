@@ -242,6 +242,9 @@ Devvit.addCustomPostType({
                   }
                 }
                 context.ui.webView.postMessage('modvigil-webview', { type: 'NUDGE_SUCCESS', payload: { count: sent, failed } });
+                if (sent > 0) {
+                  await context.redis.incrBy(`${auth.subreddit.id}:stats:ghost_mods_nudged`, sent);
+                }
               } catch (error) {
                 console.error('❌ [ModVigil] Error nudging ghost mods:', error);
                 context.ui.webView.postMessage('modvigil-webview', { type: 'ERROR', payload: { message: 'Failed to send nudge messages' } });

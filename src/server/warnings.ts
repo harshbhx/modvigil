@@ -57,6 +57,11 @@ Please take this time to review the rules and ensure you are following them.`;
       // (This flag will show up in the dashboard)
       const flagKey = `warn:flagged:${context.subredditId}:${sanitizedUserId}`;
       await context.redis.set(flagKey, 'true');
+      
+      // NEW: Add to a set so we can list them in the dashboard
+      const flaggedUserStr = JSON.stringify({ username: userId, removals: removalCount, timestamp: Date.now() });
+      await context.redis.zAdd(`${context.subredditId}:warn:flagged_users`, { member: flaggedUserStr, score: Date.now() });
+      
       console.log(`🚩 [ModVigil Warnings] User ${sanitizedUserId} flagged for manual mod review.`);
       return;
     }
@@ -74,6 +79,9 @@ Please take this time to review the rules and ensure you are following them.`;
       await context.redis.set(lastSentKey, Date.now().toString(), {
         expiration: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
       });
+
+      // NEW: Track stat for Time Savings Calculator
+      await context.redis.incrBy(`${context.subredditId}:stats:warnings_sent`, 1);
     }
 
   } catch (error) {

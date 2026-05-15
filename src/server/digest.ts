@@ -119,6 +119,9 @@ export async function generateWeeklyDigest(_event: unknown, context: ScheduledJo
       });
     }
 
+    // NEW: Track stat for Time Savings Calculator
+    await context.redis.incrBy(`${subredditId}:stats:digests_sent`, 1);
+
     console.log('✅ [ModVigil Digest] Digest posted successfully.');
   } catch (error) {
     console.error('❌ [ModVigil Digest] Error generating weekly digest:', error);

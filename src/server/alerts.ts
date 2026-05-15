@@ -143,6 +143,16 @@ This could indicate a raid, a highly controversial post, or an influx of rule-br
       await context.redis.set(lastFiredKey, Date.now().toString(), {
         expiration: new Date(Date.now() + 2 * 60 * 60 * 1000), // 2 hours
       });
+
+      // NEW: Log to history and increment stats
+      const spikeData = JSON.stringify({
+        timestamp: Date.now(),
+        count: currentCount,
+        baseline,
+        threshold,
+      });
+      await context.redis.zAdd(`${subredditId}:spike:history`, { member: spikeData, score: Date.now() });
+      await context.redis.incrBy(`${subredditId}:stats:spike_alerts`, 1);
     }
   } catch (error) {
     console.error('❌ [ModVigil Alerts] Error checking for spike:', error);

@@ -308,6 +308,52 @@ export class ModVigilRedis {
   }
 
   /**
+   * Retrieves overall stats for the Time Savings Calculator.
+   */
+  async getStats(): Promise<{ spikeAlerts: number; warningsSent: number; digestsSent: number; ghostNudges: number }> {
+    try {
+      const [spikes, warnings, digests, nudges] = await Promise.all([
+        this.redis.get(`${this.subredditId}:stats:spike_alerts`),
+        this.redis.get(`${this.subredditId}:stats:warnings_sent`),
+        this.redis.get(`${this.subredditId}:stats:digests_sent`),
+        this.redis.get(`${this.subredditId}:stats:ghost_mods_nudged`),
+      ]);
+      return {
+        spikeAlerts: safeInt(spikes),
+        warningsSent: safeInt(warnings),
+        digestsSent: safeInt(digests),
+        ghostNudges: safeInt(nudges),
+      };
+    } catch (e) {
+      return { spikeAlerts: 0, warningsSent: 0, digestsSent: 0, ghostNudges: 0 };
+    }
+  }
+
+  /**
+   * Retrieves recent spike history.
+   */
+  async getSpikeHistory(): Promise<{ timestamp: number; count: number; baseline: number; threshold: number }[]> {
+    try {
+      const history = await this.redis.zRange(`${this.subredditId}:spike:history`, 0, 4, { reverse: true, by: 'rank' });
+      return history.map(item => JSON.parse(item.member));
+    } catch (e) {
+      return [];
+    }
+  }
+
+  /**
+   * Retrieves flagged users (4+ removals).
+   */
+  async getFlaggedUsers(): Promise<{ username: string; removals: number; timestamp: number }[]> {
+    try {
+      const flagged = await this.redis.zRange(`${this.subredditId}:warn:flagged_users`, 0, 9, { reverse: true, by: 'rank' });
+      return flagged.map(item => JSON.parse(item.member));
+    } catch (e) {
+      return [];
+    }
+  }
+
+  /**
    * Fetches the top removal reasons for a given date.
    * FIX #27: Uses safeInt to prevent NaN.
    */
