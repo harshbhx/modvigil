@@ -39,11 +39,70 @@ export class ModVigilRedis {
       
       const lastActiveKey = `mod:lastactive:${actionData.moderator.name}`;
       await this.redis.set(lastActiveKey, timestamp.toString());
+
+      // 4. Update global mod leaderboard
+      await this.redis.zIncrBy('mod:leaderboard', actionData.moderator.name, 1);
     }
   }
 
   async getDailyTotals(dateStr: string): Promise<Record<string, string>> {
     const totalKey = `actions:total:${dateStr}`;
     return await this.redis.hGetAll(totalKey);
+  }
+
+  /**
+   * Fetches the last 7 days of totals for the dashboard.
+   */
+  async getLast7DaysTotals(): Promise<{ label: string; value: number }[]> {
+    const result: { label: string; value: number }[] = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const dateStr = d.toISOString().split('T')[0];
+      const totals = await this.getDailyTotals(dateStr);
+      
+      let dayTotal = 0;
+      Object.values(totals).forEach(v => dayTotal += parseInt(v) || 0);
+      
+      result.push({
+        label: dateStr.split('-').slice(1).join('/'), // MM/DD
+        value: dayTotal
+      });
+    }
+    return result;
+  }
+
+  /**
+   * Generates a 7x24 heatmap grid of actions.
+   */
+  async getHeatmapData(): Promise<number[][]> {
+    const grid: number[][] = Array(7).fill(0).map(() => Array(24).fill(0));
+    
+    // We'll scan the last 7 days
+    for (let i = 0; i < 7; i++) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const dateStr = d.toISOString().split('T')[0];
+      const dayOfWeek = (d.getDay() + 6) % 7; // 0 = Mon, 6 = Sun
+      
+      for (let hour = 0; hour < 24; hour++) {
+        const actionKey = `actions:${dateStr}:${hour}`;
+        const count = await this.redis.zCard(actionKey);
+        grid[dayOfWeek][hour] += count;
+      }
+    }
+    return grid;
+  }
+
+  /**
+   * Fetches the top moderators by action count.
+   */
+  async getLeaderboard(): Promise<{ username: string; count: number }[]> {
+    const leaderboard = await this.redis.zRange('mod:leaderboard', 0, 9, { reverse: true, by: 'rank' });
+    
+    return leaderboard.map(item => ({
+      username: item.member,
+      count: item.score
+    }));
   }
 }

@@ -1,5 +1,6 @@
 import { Devvit } from '@devvit/public-api';
 import { handleModAction } from './server/pipeline.js';
+import { ModVigilRedis } from './server/redis.js';
 
 // --- MODVIGIL MAIN ---
 
@@ -17,7 +18,11 @@ Devvit.addTrigger({
 Devvit.addTrigger({
   event: 'AppInstall',
   onEvent: async (event, context) => {
-    console.log(`✅ [ModVigil] App installed in r/${event.subreddit?.name}`);
+    try {
+      console.log(`✅ [ModVigil] App installed in r/${event.subreddit?.name}`);
+    } catch (error) {
+      console.error('❌ [ModVigil] Error in AppInstall trigger:', error);
+    }
   },
 });
 
@@ -25,7 +30,11 @@ Devvit.addTrigger({
 Devvit.addSchedulerJob({
   name: 'spikeChecker',
   onRun: async (event, context) => {
-    console.log('🔍 [ModVigil] Running spike checker...');
+    try {
+      console.log('🔍 [ModVigil] Running spike checker...');
+    } catch (error) {
+      console.error('❌ [ModVigil] Error in spikeChecker job:', error);
+    }
   },
 });
 
@@ -34,8 +43,10 @@ Devvit.addMenuItem({
   location: 'subreddit',
   label: '📊 Open ModVigil Dashboard',
   onPress: async (event, context) => {
-    console.log('🔘 [ModVigil Test] Menu Item Clicked! Everything is working.');
-    context.ui.showToast('✅ ModVigil is working! Check your console.');
+    context.ui.showWebView({
+      url: 'index.html', // This refers to the webroot/index.html after build
+      title: 'ModVigil Dashboard',
+    });
   },
 });
 
@@ -51,14 +62,45 @@ Devvit.addCustomPostType({
         <spacer size="medium" />
         <button 
           onPress={() => {
-            console.log('🔘 [ModVigil Test] Dashboard Button Clicked!');
-            context.ui.showToast('Button works! Check your console.');
+            context.ui.showWebView({
+              url: 'index.html',
+              title: 'ModVigil Dashboard',
+            });
           }}
         >
-          Test Console Log
+          Open Live Dashboard
         </button>
       </vstack>
     );
+  },
+});
+
+// 5. Webview Message Handler
+Devvit.addWebViewMessageHandler({
+  onMessage: async (message, context) => {
+    try {
+      if (message.type === 'GET_DASHBOARD_DATA') {
+        const db = new ModVigilRedis(context.redis);
+        
+        const [dailyTotals, heatmapData, leaderboard] = await Promise.all([
+          db.getLast7DaysTotals(),
+          db.getHeatmapData(),
+          db.getLeaderboard()
+        ]);
+
+        context.ui.webView.postMessage('index.html', {
+          type: 'DASHBOARD_DATA',
+          payload: {
+            dailyTotals,
+            heatmapData,
+            leaderboard,
+            healthScore: 88, // Placeholder for now
+          }
+        });
+      }
+    } catch (error) {
+      console.error('❌ [ModVigil] Error in WebView message handler:', error);
+    }
   },
 });
 
