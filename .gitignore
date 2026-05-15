@@ -28,7 +28,7 @@ skills-lock.json
 
 # Markdown Files
 *.md
-!README.md
+!readme.md
 !docs/Architecture.md
 !docs/DEVVIT_DOCS.md
 !docs/prd.md
