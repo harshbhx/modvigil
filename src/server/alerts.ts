@@ -5,7 +5,9 @@ import { ModVigilRedis } from './redis.js';
  * Job that calculates the rolling average baseline for the current day and hour.
  */
 export async function updateBaseline(event: any, context: ScheduledJobContext): Promise<void> {
-  const db = new ModVigilRedis(context.redis);
+  const subreddit = await context.reddit.getCurrentSubreddit();
+  const subredditId = subreddit.id;
+  const db = new ModVigilRedis(context.redis, subredditId);
   const now = new Date();
   const dayOfWeek = (now.getDay() + 6) % 7; // 0 = Mon, 6 = Sun
   const hour = now.getUTCHours();
@@ -45,7 +47,9 @@ export async function updateBaseline(event: any, context: ScheduledJobContext): 
  * Job that checks if the current hour's activity is a spike.
  */
 export async function checkForSpike(event: any, context: ScheduledJobContext): Promise<void> {
-  const db = new ModVigilRedis(context.redis);
+  const subreddit = await context.reddit.getCurrentSubreddit();
+  const subredditId = subreddit.id;
+  const db = new ModVigilRedis(context.redis, subredditId);
   const now = new Date();
   const dayOfWeek = (now.getDay() + 6) % 7;
   const hour = now.getUTCHours();

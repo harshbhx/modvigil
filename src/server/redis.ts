@@ -3,15 +3,21 @@ import { RedisClient } from '@devvit/public-api';
 /**
  * ALL Redis logic for ModVigil.
  * Uses context.redis (passed in as a RedisClient).
+ *
+ * CRITICAL: All keys are prefixed with subredditId to prevent cross-subreddit data contamination.
  */
 
 export class ModVigilRedis {
-  constructor(private redis: RedisClient) {}
+  constructor(
+    private redis: RedisClient,
+    private subredditId: string
+  ) {}
 
   /**
    * Records a single mod action in the daily list and updates totals.
+   * FIXED: All keys now prefixed with subredditId to prevent cross-subreddit contamination.
    */
-  async recordAction(subredditId: string, actionData: any): Promise<void> {
+  async recordAction(actionData: any): Promise<void> {
     try {
       const now = new Date();
       const dateStr = now.toISOString().split('T')[0];
@@ -19,8 +25,7 @@ export class ModVigilRedis {
       const timestamp = now.getTime();
 
       // 1. Store the raw action in a Sorted Set (ordered by timestamp)
-      // Devvit Redis doesn't have LPUSH, so we use ZADD.
-      const actionKey = `actions:${dateStr}:${hourStr}`;
+      const actionKey = `${this.subredditId}:actions:${dateStr}:${hourStr}`;
       await this.redis.zAdd(actionKey, {
         member: JSON.stringify(actionData),
         score: timestamp
@@ -28,26 +33,26 @@ export class ModVigilRedis {
       await this.redis.expire(actionKey, 60 * 60 * 24 * 90); // Keep 90 days
 
       // 2. Increment daily totals for this action type
-      const totalKey = `actions:total:${dateStr}`;
+      const totalKey = `${this.subredditId}:actions:total:${dateStr}`;
       await this.redis.hIncrBy(totalKey, actionData.action, 1);
       await this.redis.expire(totalKey, 60 * 60 * 24 * 90);
 
       // 3. Update mod-specific activity
       if (actionData.moderator) {
-        const modKey = `mod:activity:${actionData.moderator.name}:${dateStr}`;
+        const modKey = `${this.subredditId}:mod:activity:${actionData.moderator.name}:${dateStr}`;
         await this.redis.hIncrBy(modKey, actionData.action, 1);
         await this.redis.expire(modKey, 60 * 60 * 24 * 90);
 
-        const lastActiveKey = `mod:lastactive:${actionData.moderator.name}`;
+        const lastActiveKey = `${this.subredditId}:mod:lastactive:${actionData.moderator.name}`;
         await this.redis.set(lastActiveKey, timestamp.toString(), { ex: 60 * 60 * 24 * 90 });
 
         // 4. Update global mod leaderboard (with TTL to prevent unbounded growth)
-        await this.redis.zIncrBy('mod:leaderboard', actionData.moderator.name, 1);
-        await this.redis.expire('mod:leaderboard', 60 * 60 * 24 * 90);
+        await this.redis.zIncrBy(`${this.subredditId}:mod:leaderboard`, actionData.moderator.name, 1);
+        await this.redis.expire(`${this.subredditId}:mod:leaderboard`, 60 * 60 * 24 * 90);
 
         // 5. Track moderator in set for ghost detection
-        await this.redis.sAdd('mod:all', actionData.moderator.name);
-        await this.redis.expire('mod:all', 60 * 60 * 24 * 90);
+        await this.redis.sAdd(`${this.subredditId}:mod:all`, actionData.moderator.name);
+        await this.redis.expire(`${this.subredditId}:mod:all`, 60 * 60 * 24 * 90);
       }
     } catch (error) {
       console.error('❌ [ModVigil Redis] Error recording action:', error);

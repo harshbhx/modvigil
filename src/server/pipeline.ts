@@ -12,12 +12,12 @@ export async function handleModAction(event: ModAction, context: TriggerContext)
     const subredditId = subreddit?.id || 'unknown';
     const subredditName = subreddit?.name || 'unknown';
     const dateStr = new Date().toISOString().split('T')[0];
-    
+
     console.log(`📡 [ModVigil Pipeline] Processing ${action} by u/${moderator?.name}`);
-    
-    const db = new ModVigilRedis(context.redis);
-    
-    await db.recordAction(subredditId, {
+
+    const db = new ModVigilRedis(context.redis, subredditId);
+
+    await db.recordAction({
       action,
       moderator: moderator ? { id: moderator.id, name: moderator.name } : null,
       targetId: targetPost?.id || targetComment?.id || targetUser?.id,
