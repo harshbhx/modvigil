@@ -8,7 +8,7 @@ export async function updateBaseline(event: any, context: any): Promise<void> {
   const subredditId = subreddit.id;
   const db = new ModVigilRedis(context.redis, subredditId);
   const now = new Date();
-  const dayOfWeek = (now.getDay() + 6) % 7; // 0 = Mon, 6 = Sun
+  const dayOfWeek = (now.getUTCDay() + 6) % 7; // 0 = Mon, 6 = Sun (UTC-based)
   const hour = now.getUTCHours();
 
   console.log(`📊 [ModVigil Alerts] Updating baseline for Day ${dayOfWeek}, Hour ${hour}...`);
@@ -22,10 +22,11 @@ export async function updateBaseline(event: any, context: any): Promise<void> {
       const pastDate = new Date();
       pastDate.setDate(now.getDate() - (i * 7));
       const dateStr = pastDate.toISOString().split('T')[0];
+      const hourStr = String(hour).padStart(2, '0');
 
-      const actionKey = `${subredditId}:actions:${dateStr}:${hour}`;
+      const actionKey = `${subredditId}:actions:${dateStr}:${hourStr}`;
       const count = await context.redis.zCard(actionKey);
-      
+
       totalCount += count;
       daysFound++;
     }
@@ -56,22 +57,23 @@ export async function checkForSpike(event: any, context: any): Promise<void> {
   const subredditId = subreddit.id;
   const db = new ModVigilRedis(context.redis, subredditId);
   const now = new Date();
-  const dayOfWeek = (now.getDay() + 6) % 7;
+  const dayOfWeek = (now.getUTCDay() + 6) % 7; // 0 = Mon, 6 = Sun (UTC-based)
   const hour = now.getUTCHours();
   const dateStr = now.toISOString().split('T')[0];
 
   try {
     // 1. Get current count
-    const actionKey = `${subredditId}:actions:${dateStr}:${hour}`;
+    const hourStr = String(hour).padStart(2, '0');
+    const actionKey = `${subredditId}:actions:${dateStr}:${hourStr}`;
     const currentCount = await context.redis.zCard(actionKey);
 
     // 2. Get baseline
-    const baselineKey = `${subredditId}:spike:baseline:${dayOfWeek}:${hour}`;
+    const baselineKey = `${subredditId}:spike:baseline:${dayOfWeek}:${hourStr}`;
     const baselineStr = await context.redis.get(baselineKey);
     const baseline = baselineStr ? parseFloat(baselineStr) : 0;
 
-    // 3. Get threshold from settings
-    const threshold = (await context.settings.get('spikeThreshold') as number) || 3.0;
+    // 3. Get threshold from settings (Redis first, fallback to default)
+    const threshold = await db.getSetting('spikeThreshold', 3.0);
 
     // 4. Scale baseline by elapsed time in current hour
     // The baseline represents a full 60-minute average, but we may only be

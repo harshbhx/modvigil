@@ -17,7 +17,7 @@ Thumbs.db
 # Devvit
 .devvit/
 
-# AI and Gemini CLI files
+# AI and CLI files - NEVER commit these
 .gemini/
 .agents/
 .claude/
@@ -25,19 +25,14 @@ Thumbs.db
 .cursor/
 ai_notes/
 skills-lock.json
+temp_init/
+CLAUDE.md
+HANDOFF.md
 
-# Markdown Files
+# Documentation - only readme.md in root
 *.md
 !readme.md
-!docs/Architecture.md
-!docs/DEVVIT_DOCS.md
-!docs/prd.md
-!HANDOFF.md
-
-# Internal documentation directories
-docs/current/
-docs/planning/
-docs/archive/
+!docs/*.md
 
 # Editors
 .vscode/

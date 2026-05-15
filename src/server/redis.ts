@@ -14,8 +14,28 @@ export class ModVigilRedis {
   ) {}
 
   /**
+   * Sanitizes a username to prevent Redis key injection.
+   * Defense-in-depth: even if pipeline validation is bypassed, this protects Redis keys.
+   * @param username - Raw username string
+   * @returns Sanitized username safe for use in Redis keys
+   */
+  private sanitizeUsername(username: string): string {
+    if (!username) return 'unknown';
+    // Remove any characters that aren't alphanumeric, underscore, or hyphen
+    // This prevents Redis key injection via colons, newlines, control characters, etc.
+    return username.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 100); // Cap at 100 chars
+  }
+
+  /**
    * Records a single mod action in the daily list and updates totals.
    * FIXED: All keys now prefixed with subredditId to prevent cross-subreddit contamination.
+   * OPTIMIZED: Batches independent Redis operations using Promise.all for parallel execution.
+   * SECURED: Sanitizes usernames to prevent Redis key injection attacks.
+   *
+   * ATOMICITY NOTE: This method uses Promise.all for performance, not Redis transactions.
+   * Devvit Redis does not support MULTI/EXEC transactions. The current "best effort" approach
+   * is acceptable for analytics use cases where eventual consistency is sufficient. If a single
+   * operation fails, others may still succeed, which is preferable to all-or-nothing for metrics.
    */
   async recordAction(actionData: any): Promise<void> {
     try {
@@ -24,40 +44,59 @@ export class ModVigilRedis {
       const hourStr = String(now.getUTCHours()).padStart(2, '0');
       const timestamp = now.getTime();
 
-      // 1. Store the raw action in a Sorted Set (ordered by timestamp)
       const actionKey = `${this.subredditId}:actions:${dateStr}:${hourStr}`;
-      await this.redis.zAdd(actionKey, {
-        member: JSON.stringify(actionData),
-        score: timestamp
-      });
-      await this.redis.expire(actionKey, 60 * 60 * 24 * 90); // Keep 90 days
-
-      // Also update heatmap hash for efficient retrieval (reduces 168 calls to 7)
       const heatmapKey = `${this.subredditId}:heatmap:${dateStr}`;
-      await this.redis.hIncrBy(heatmapKey, hourStr, 1);
-      await this.redis.expire(heatmapKey, 60 * 60 * 24 * 90);
-
-      // 2. Increment daily totals for this action type
       const totalKey = `${this.subredditId}:actions:total:${dateStr}`;
-      await this.redis.hIncrBy(totalKey, actionData.action, 1);
-      await this.redis.expire(totalKey, 60 * 60 * 24 * 90);
 
-      // 3. Update mod-specific activity
-      if (actionData.moderator) {
-        const modKey = `${this.subredditId}:mod:activity:${actionData.moderator.name}:${dateStr}`;
-        await this.redis.hIncrBy(modKey, actionData.action, 1);
-        await this.redis.expire(modKey, 60 * 60 * 24 * 90);
+      // Batch all core operations (action storage, heatmap, daily totals)
+      const coreOps = [
+        // 1. Store the raw action in a Sorted Set (ordered by timestamp)
+        this.redis.zAdd(actionKey, {
+          member: JSON.stringify(actionData),
+          score: timestamp
+        }).then(() => this.redis.expire(actionKey, 60 * 60 * 24 * 90)),
 
-        const lastActiveKey = `${this.subredditId}:mod:lastactive:${actionData.moderator.name}`;
-        await this.redis.set(lastActiveKey, timestamp.toString(), { expiration: new Date(Date.now() + 60 * 60 * 24 * 90 * 1000) });
+        // 2. Update heatmap hash for efficient retrieval
+        this.redis.hIncrBy(heatmapKey, hourStr, 1)
+          .then(() => this.redis.expire(heatmapKey, 60 * 60 * 24 * 90)),
 
-        // 4. Update global mod leaderboard (with TTL to prevent unbounded growth)
-        await this.redis.zIncrBy(`${this.subredditId}:mod:leaderboard`, actionData.moderator.name, 1);
-        await this.redis.expire(`${this.subredditId}:mod:leaderboard`, 60 * 60 * 24 * 90);
+        // 3. Increment daily totals for this action type
+        this.redis.hIncrBy(totalKey, actionData.action, 1)
+          .then(() => this.redis.expire(totalKey, 60 * 60 * 24 * 90))
+      ];
 
-        // 5. Track moderator in set for ghost detection (no TTL - keep all mods ever seen)
-        await this.redis.zAdd(`${this.subredditId}:mod:all`, { member: actionData.moderator.name, score: 0 });
+      // 4. Update mod-specific activity (if moderator exists)
+      if (actionData.moderator && actionData.moderator.name) {
+        // Sanitize username for Redis key safety (defense-in-depth)
+        const sanitizedModName = this.sanitizeUsername(actionData.moderator.name);
+
+        const modKey = `${this.subredditId}:mod:activity:${sanitizedModName}:${dateStr}`;
+        const lastActiveKey = `${this.subredditId}:mod:lastactive:${sanitizedModName}`;
+
+        coreOps.push(
+          // Mod daily activity
+          this.redis.hIncrBy(modKey, actionData.action, 1)
+            .then(() => this.redis.expire(modKey, 60 * 60 * 24 * 90)),
+
+          // Last active timestamp
+          this.redis.set(lastActiveKey, timestamp.toString(), {
+            expiration: new Date(Date.now() + 60 * 60 * 24 * 90 * 1000)
+          }).then(() => {}),
+
+          // Global mod leaderboard
+          this.redis.zIncrBy(`${this.subredditId}:mod:leaderboard`, sanitizedModName, 1)
+            .then(() => this.redis.expire(`${this.subredditId}:mod:leaderboard`, 60 * 60 * 24 * 90)),
+
+          // Track moderator for ghost detection
+          this.redis.zAdd(`${this.subredditId}:mod:all`, {
+            member: sanitizedModName,
+            score: 0
+          }).then(() => this.redis.expire(`${this.subredditId}:mod:all`, 60 * 60 * 24 * 90))
+        );
       }
+
+      // Execute all operations in parallel
+      await Promise.all(coreOps);
     } catch (error) {
       console.error('❌ [ModVigil Redis] Error recording action:', error);
       // Graceful degradation - don't throw, just log
@@ -76,25 +115,26 @@ export class ModVigilRedis {
 
   /**
    * Fetches the last 7 days of totals for the dashboard.
+   * OPTIMIZED: Uses Promise.all for parallel fetching instead of sequential await in loop.
    */
   async getLast7DaysTotals(): Promise<{ label: string; value: number }[]> {
     try {
-      const result: { label: string; value: number }[] = [];
+      const promises = [];
       for (let i = 6; i >= 0; i--) {
         const d = new Date();
         d.setDate(d.getDate() - i);
         const dateStr = d.toISOString().split('T')[0];
-        const totals = await this.getDailyTotals(dateStr);
-
-        let dayTotal = 0;
-        Object.values(totals).forEach(v => dayTotal += parseInt(v) || 0);
-
-        result.push({
-          label: dateStr.split('-').slice(1).join('/'), // MM/DD
-          value: dayTotal
-        });
+        promises.push(
+          this.getDailyTotals(dateStr).then(totals => {
+            const dayTotal = Object.values(totals).reduce((sum, v) => sum + (parseInt(v) || 0), 0);
+            return {
+              label: dateStr.split('-').slice(1).join('/'), // MM/DD
+              value: dayTotal
+            };
+          })
+        );
       }
-      return result;
+      return await Promise.all(promises);
     } catch (error) {
       console.error('❌ [ModVigil Redis] Error getting last 7 days totals:', error);
       return [];
@@ -157,6 +197,7 @@ export class ModVigilRedis {
   /**
    * Identifies moderators who haven't taken an action in 30 days.
    * OPTIMIZED: Uses Promise.all to batch fetch last active timestamps.
+   * SECURED: Sanitizes usernames when constructing Redis keys.
    */
   async getGhostMods(): Promise<{ username: string; lastActiveDays: number }[]> {
     try {
@@ -167,9 +208,15 @@ export class ModVigilRedis {
       const ghostMods: { username: string; lastActiveDays: number }[] = [];
 
       // Batch fetch all last active timestamps in parallel
-      const lastActivePromises = allMods.map((mod: string) =>
-        this.redis.get(`${this.subredditId}:mod:lastactive:${mod}`).then((lastActiveStr: string | undefined) => ({ mod, lastActiveStr: lastActiveStr || null }))
-      );
+      const lastActivePromises = allMods.map((mod: string) => {
+        // Sanitize username for key construction (defense-in-depth)
+        const sanitizedMod = this.sanitizeUsername(mod);
+        return this.redis.get(`${this.subredditId}:mod:lastactive:${sanitizedMod}`)
+          .then((lastActiveStr: string | undefined) => ({
+            mod: sanitizedMod,
+            lastActiveStr: lastActiveStr || null
+          }));
+      });
 
       const results = await Promise.all(lastActivePromises);
 
@@ -180,6 +227,9 @@ export class ModVigilRedis {
           if (diffDays >= 30) {
             ghostMods.push({ username: mod, lastActiveDays: diffDays });
           }
+        } else {
+          // Mod has never been active - definitely a ghost mod
+          ghostMods.push({ username: mod, lastActiveDays: 999 });
         }
       });
 
@@ -231,29 +281,83 @@ export class ModVigilRedis {
 
   /**
    * Calculates a community health score (0-100).
+   * Uses dynamic baseline that adapts to subreddit size.
    */
   async getHealthScore(): Promise<number> {
     try {
       const heatmap = await this.getHeatmapData();
       let hoursWithActivity = 0;
+      let totalActions = 0;
 
       heatmap.forEach(day => {
         day.forEach(hourCount => {
           if (hourCount > 0) hoursWithActivity++;
+          totalActions += hourCount;
         });
       });
 
+      // Coverage score: % of hours with at least 1 action
       const coverageScore = (hoursWithActivity / 168) * 100;
 
-      // Activity score (based on last 7 days total volume compared to a "healthy" baseline)
-      const totals = await this.getLast7DaysTotals();
-      const totalVolume = totals.reduce((sum, d) => sum + d.value, 0);
-      const volumeScore = Math.min(100, (totalVolume / 50) * 100); // Assume 50 actions/week is "active"
+      // Volume score: Compare to subreddit's own baseline
+      // Calculate average actions per active hour
+      const avgActionsPerActiveHour = hoursWithActivity > 0
+        ? totalActions / hoursWithActivity
+        : 0;
 
-      return Math.round((coverageScore * 0.7) + (volumeScore * 0.3));
+      // Volume is healthy if:
+      // - At least 1 action per active hour (baseline)
+      // - More actions = better, up to 100% at 10+ actions/hour
+      const volumeScore = Math.min(100, (avgActionsPerActiveHour / 10) * 100);
+
+      // Weighted: 70% coverage (consistency), 30% volume (activity level)
+      const finalScore = Math.round((coverageScore * 0.7) + (volumeScore * 0.3));
+
+      return finalScore;
     } catch (error) {
       console.error('❌ [ModVigil Redis] Error calculating health score:', error);
-      return 0; // Error state = 0 (not 50)
+      return 0;
+    }
+  }
+
+  /**
+   * Saves a setting to Redis (runtime-modifiable settings).
+   * These override the defaults from devvit.yaml.
+   */
+  async saveSetting(key: string, value: string | number | boolean): Promise<void> {
+    try {
+      const settingKey = `${this.subredditId}:settings:${key}`;
+      await this.redis.set(settingKey, String(value));
+      console.log(`✅ [ModVigil Redis] Saved setting ${key} = ${value}`);
+    } catch (error) {
+      console.error(`❌ [ModVigil Redis] Error saving setting ${key}:`, error);
+    }
+  }
+
+  /**
+   * Gets a setting from Redis, with fallback to default value.
+   * Checks Redis first (runtime override), then uses provided default.
+   */
+  async getSetting<T>(key: string, defaultValue: T): Promise<T> {
+    try {
+      const settingKey = `${this.subredditId}:settings:${key}`;
+      const value = await this.redis.get(settingKey);
+
+      if (value === null || value === undefined) {
+        return defaultValue;
+      }
+
+      // Type conversion based on default value type
+      if (typeof defaultValue === 'number') {
+        return parseFloat(value) as T;
+      }
+      if (typeof defaultValue === 'boolean') {
+        return (value === 'true') as T;
+      }
+      return value as T;
+    } catch (error) {
+      console.error(`❌ [ModVigil Redis] Error getting setting ${key}:`, error);
+      return defaultValue;
     }
   }
 }

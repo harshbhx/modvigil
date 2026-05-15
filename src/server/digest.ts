@@ -42,7 +42,7 @@ export async function generateWeeklyDigest(event: any, context: any): Promise<vo
     
     // 4. Format the post body
     const weekStart = last7Days.length > 0 ? last7Days[0].label : 'N/A';
-    const weekEnd = last7Days.length > 0 ? last7Days[6].label : 'N/A';
+    const weekEnd = last7Days.length > 0 ? last7Days[last7Days.length - 1].label : 'N/A';
 
     const postTitle = `📊 ModVigil Weekly Digest: ${weekStart} - ${weekEnd}`;
     const postBody = `
@@ -66,7 +66,7 @@ export async function generateWeeklyDigest(event: any, context: any): Promise<vo
     `;
 
     // 5. Check transparency mode (public vs mod-only)
-    const transparencyMode = await context.settings.get('transparencyMode') as boolean;
+    const transparencyMode = await db.getSetting('transparencyMode', false);
 
     console.log(`📝 [ModVigil Digest] Posting digest to r/${subredditName}...`);
 

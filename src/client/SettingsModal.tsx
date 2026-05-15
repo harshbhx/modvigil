@@ -17,13 +17,29 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, currentSe
   const [enableWarnings, setEnableWarnings] = useState(currentSettings.enableWarnings);
   const [saved, setSaved] = useState(false);
 
+  React.useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'SETTINGS_SAVED') {
+        setSaved(true);
+        setTimeout(() => {
+          onClose();
+        }, 1500);
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [onClose]);
+
   const handleSave = () => {
-    // Note: In a real implementation, this would call context.settings.set()
-    // For now, we just show a success message
-    setSaved(true);
-    setTimeout(() => {
-      onClose();
-    }, 1500);
+    // Send settings to server via postMessage
+    window.parent.postMessage({
+      type: 'SAVE_SETTINGS',
+      payload: {
+        spikeThreshold,
+        transparencyMode,
+        enableWarnings,
+      }
+    }, '*');
   };
 
   return (

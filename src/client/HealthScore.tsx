@@ -8,9 +8,9 @@ interface HealthScoreProps {
 
 export const HealthScore: React.FC<HealthScoreProps> = ({ score }) => {
   const getStatusColor = (s: number) => {
-    if (s >= 90) return '#46D160'; // Green
-    if (s >= 70) return '#FFD635'; // Yellow
-    return '#FF4500'; // Orange/Red
+    if (s >= 90) return 'var(--color-success)'; // Green
+    if (s >= 70) return 'var(--color-warning)'; // Yellow
+    return 'var(--color-primary)'; // Orange/Red
   };
 
   const color = getStatusColor(score);
@@ -19,7 +19,7 @@ export const HealthScore: React.FC<HealthScoreProps> = ({ score }) => {
   const offset = circumference * (1 - score / 100);
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '15px', backgroundColor: '#F6F7F8', padding: '10px 15px', borderRadius: '12px', border: '1px solid #EDEFF1' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: '15px', backgroundColor: 'var(--color-neutral-background-weak)', padding: '10px 15px', borderRadius: '12px', border: '1px solid var(--color-neutral-border)' }}>
       <div style={{ position: 'relative', width: '60px', height: '60px' }}>
         <svg width="60" height="60" viewBox="0 0 60 60">
           <defs>
@@ -35,7 +35,7 @@ export const HealthScore: React.FC<HealthScoreProps> = ({ score }) => {
               </feMerge>
             </filter>
           </defs>
-          <circle cx="30" cy="30" r={radius} fill="none" stroke="#EDEFF1" strokeWidth="6" />
+          <circle cx="30" cy="30" r={radius} fill="none" stroke="var(--color-neutral-border)" strokeWidth="6" />
           <circle 
             cx="30" 
             cy="30" 
@@ -50,15 +50,15 @@ export const HealthScore: React.FC<HealthScoreProps> = ({ score }) => {
             style={{ transition: 'stroke-dashoffset 1s ease-in-out', filter: 'url(#glow)' }}
           />
         </svg>
-        <div style={{ position: 'absolute', top: 0, left: 0, width: '60px', height: '60px', display: 'flex', justifyContent: 'center', alignItems: 'center', fontSize: '16px', fontWeight: '800', color: '#1A1A1B' }}>
+        <div style={{ position: 'absolute', top: 0, left: 0, width: '60px', height: '60px', display: 'flex', justifyContent: 'center', alignItems: 'center', fontSize: '16px', fontWeight: '800', color: 'var(--color-neutral-content)' }}>
           {score}
         </div>
       </div>
       <div>
-        <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#878A8C', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Subreddit Health</div>
+        <div style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--color-neutral-content-weak)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Subreddit Health</div>
         <div style={{ fontSize: '18px', fontWeight: '900', color }}>{score >= 85 ? 'ELITE' : score >= 70 ? 'STABLE' : 'CRITICAL'}</div>
-        <div style={{ fontSize: '11px', color: '#878A8C', display: 'flex', alignItems: 'center', gap: '4px' }}>
-          <span style={{ color: score >= 70 ? '#46D160' : '#FF4500' }}>{score >= 70 ? '▲' : '▼'}</span> 
+        <div style={{ fontSize: '11px', color: 'var(--color-neutral-content-weak)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <span style={{ color: score >= 70 ? 'var(--color-success)' : 'var(--color-primary)' }}>{score >= 70 ? '▲' : '▼'}</span> 
           {score >= 70 ? 'Improving coverage' : 'Coverage gaps detected'}
         </div>
       </div>

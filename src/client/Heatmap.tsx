@@ -29,27 +29,27 @@ export const Heatmap: React.FC<HeatmapProps> = ({ data, title }) => {
   if (maxValue === 0) maxValue = 1;
 
   const getColor = (value: number) => {
-    if (value === 0) return '#F6F7F8';
+    if (value === 0) return 'var(--color-neutral-background-weak)';
     const intensity = Math.min(value / maxValue, 1);
-    // Reddit Brand: Darker Red-Orange gradient
+    // Reddit Brand: Darker Red-Orange gradient (uses primary color)
     return `rgba(255, 69, 0, ${0.15 + intensity * 0.85})`;
   };
 
   return (
     <div className="heatmap-container" style={{ width: '100%', overflowX: 'auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-        <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 'bold', color: '#878A8C', textTransform: 'uppercase', letterSpacing: '1px' }}>{title}</h3>
-        <div style={{ fontSize: '11px', color: '#878A8C' }}>UTC Timescale</div>
+        <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 'bold', color: 'var(--color-neutral-content-weak)', textTransform: 'uppercase', letterSpacing: '1px' }}>{title}</h3>
+        <div style={{ fontSize: '11px', color: 'var(--color-neutral-content-weak)' }}>UTC Timescale</div>
       </div>
-      <svg width="100%" viewBox={`0 0 ${width} ${height}`} style={{ maxWidth: '100%', height: 'auto', minWidth: '320px', background: '#FFFFFF', borderRadius: '12px' }}>
+      <svg width="100%" viewBox={`0 0 ${width} ${height}`} style={{ maxWidth: '100%', height: 'auto', minWidth: '320px', background: 'var(--color-neutral-background-strong)', borderRadius: '12px' }}>
         <style>{`
           .cell { transition: transform 0.2s, stroke 0.2s; cursor: pointer; }
-          .cell:hover { transform: scale(1.1); transform-origin: center; stroke: #1A1A1B; stroke-width: 1px; z-index: 10; }
+          .cell:hover { transform: scale(1.1); transform-origin: center; stroke: var(--color-neutral-content); stroke-width: 1px; z-index: 10; }
         `}</style>
 
         {/* Hour labels */}
         {[0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22].map(h => (
-          <text key={h} x={paddingLeft + h * cellSize + cellSize / 2} y={paddingTop - 15} textAnchor="middle" fontSize="10" fontWeight="bold" fill="#878A8C">
+          <text key={h} x={paddingLeft + h * cellSize + cellSize / 2} y={paddingTop - 15} textAnchor="middle" fontSize="10" fontWeight="bold" fill="var(--color-neutral-content-weak)">
             {h}h
           </text>
         ))}
@@ -58,7 +58,7 @@ export const Heatmap: React.FC<HeatmapProps> = ({ data, title }) => {
         {data.map((row, dayIndex) => (
           <g key={dayIndex}>
             {/* Day label */}
-            <text x={paddingLeft - 15} y={paddingTop + dayIndex * cellSize + cellSize / 1.5} textAnchor="end" fontSize="10" fontWeight="bold" fill="#1A1A1B">
+            <text x={paddingLeft - 15} y={paddingTop + dayIndex * cellSize + cellSize / 1.5} textAnchor="end" fontSize="10" fontWeight="bold" fill="var(--color-neutral-content)">
               {DAYS[dayIndex]}
             </text>
             
@@ -82,7 +82,7 @@ export const Heatmap: React.FC<HeatmapProps> = ({ data, title }) => {
 
         {/* Legend */}
         <g transform={`translate(${paddingLeft}, ${height - 25})`}>
-          <text x="-10" y="10" fontSize="10" fontWeight="bold" fill="#878A8C" textAnchor="end">Quiet</text>
+          <text x="-10" y="10" fontSize="10" fontWeight="bold" fill="var(--color-neutral-content-weak)" textAnchor="end">Quiet</text>
           {[0, 0.25, 0.5, 0.75, 1].map((p, i) => (
             <rect
               key={i}
@@ -94,7 +94,7 @@ export const Heatmap: React.FC<HeatmapProps> = ({ data, title }) => {
               rx="2"
             />
           ))}
-          <text x={5 * 25 + 5} y={10} fontSize="10" fontWeight="bold" fill="#878A8C">Active</text>
+          <text x={5 * 25 + 5} y={10} fontSize="10" fontWeight="bold" fill="var(--color-neutral-content-weak)">Active</text>
         </g>
       </svg>
     </div>

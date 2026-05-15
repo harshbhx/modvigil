@@ -1,10 +1,43 @@
-import { Devvit } from '@devvit/public-api';
+import { Devvit, User } from '@devvit/public-api';
 import { handleModAction } from './server/pipeline.js';
 import { ModVigilRedis } from './server/redis.js';
 import { checkForSpike, updateBaseline } from './server/alerts.js';
 import { generateWeeklyDigest } from './server/digest.js';
+import { populateDemoData } from './server/demoData.js';
 
 // --- MODVIGIL MAIN ---
+
+// Type definitions for webview messages
+interface WebViewMessage {
+  type: string;
+  payload?: unknown;
+}
+
+interface GetDashboardDataMessage extends WebViewMessage {
+  type: 'GET_DASHBOARD_DATA';
+}
+
+interface NudgeGhostModsMessage extends WebViewMessage {
+  type: 'NUDGE_GHOST_MODS';
+  payload: {
+    ghostMods: Array<{ username: string; lastActiveDays: number }>;
+  };
+}
+
+interface PopulateDemoDataMessage extends WebViewMessage {
+  type: 'POPULATE_DEMO_DATA';
+}
+
+interface SaveSettingsMessage extends WebViewMessage {
+  type: 'SAVE_SETTINGS';
+  payload: {
+    spikeThreshold: number;
+    transparencyMode: boolean;
+    enableWarnings: boolean;
+  };
+}
+
+type IncomingWebViewMessage = GetDashboardDataMessage | NudgeGhostModsMessage | PopulateDemoDataMessage | SaveSettingsMessage;
 
 Devvit.configure({
   redis: true,
@@ -26,7 +59,7 @@ function getNextMonday9amUTC(): Date {
 Devvit.addTrigger({
   event: 'ModAction',
   onEvent: async (event, context) => {
-    await handleModAction(event as any, context);
+    await handleModAction(event, context);
   },
 });
 
@@ -35,7 +68,24 @@ Devvit.addTrigger({
   onEvent: async (event, context) => {
     try {
       console.log(`✅ [ModVigil] App installed in r/${event.subreddit?.name}`);
-      
+
+      // Seed spike detection baseline for all 168 time slots (7 days × 24 hours)
+      // This allows spike detection to work on Day 1 instead of waiting 7 weeks
+      const subreddit = await context.reddit.getCurrentSubreddit();
+      const subredditId = subreddit.id;
+
+      console.log(`🌱 [ModVigil] Seeding baseline for ${subredditId}...`);
+      const baselinePromises = [];
+      for (let dayOfWeek = 0; dayOfWeek < 7; dayOfWeek++) {
+        for (let hour = 0; hour < 24; hour++) {
+          const hourStr = String(hour).padStart(2, '0');
+          const key = `${subredditId}:spike:baseline:${dayOfWeek}:${hourStr}`;
+          baselinePromises.push(context.redis.set(key, '1.0'));
+        }
+      }
+      await Promise.all(baselinePromises);
+      console.log(`✅ [ModVigil] Seeded 168 baseline keys`);
+
       // Schedule background jobs
       await context.scheduler.runJob({
         name: 'spikeChecker',
@@ -94,31 +144,43 @@ Devvit.addCustomPostType({
         <webview
           id="modvigil-webview"
           url="index.html"
-          onMessage={async (msg: any) => {
-            if (msg.type === 'GET_DASHBOARD_DATA') {
+          onMessage={async (msg) => {
+            // Type guard to ensure msg is an object with a type property
+            if (!msg || typeof msg !== 'object' || !('type' in msg)) {
+              console.error('[ModVigil] Invalid message format:', msg);
+              return;
+            }
+
+            const message = msg as { type: string; payload?: unknown };
+
+            if (message.type === 'GET_DASHBOARD_DATA') {
               try {
                 // Security gate: moderators only
-                const modPerms = await context.reddit.getModeratorPermissions();
-                if (!modPerms || modPerms.length === 0) {
+                const subreddit = await context.reddit.getCurrentSubreddit();
+                const currentUser = await context.reddit.getCurrentUser();
+                const modsListing = await context.reddit.getModerators({ subredditName: subreddit.name });
+                const modList: User[] = modsListing.children;
+                const isModerator = modList.some((mod: User) => mod.username === currentUser?.username);
+
+                if (!isModerator) {
                   context.ui.webView.postMessage('modvigil-webview', {
                     type: 'ERROR',
                     payload: { message: 'Access denied: Moderators only' },
                   });
                   return;
                 }
-
-                const subreddit = await context.reddit.getCurrentSubreddit();
                 const subredditId = subreddit.id;
                 const db = new ModVigilRedis(context.redis, subredditId);
 
                 const dateStr = new Date().toISOString().split('T')[0];
-                const [dailyTotals, heatmapData, leaderboard, healthScore, approvalRate, topReasons] = await Promise.all([
+                const [dailyTotals, heatmapData, leaderboard, healthScore, approvalRate, topReasons, ghostMods] = await Promise.all([
                   db.getLast7DaysTotals(),
                   db.getHeatmapData(),
                   db.getLeaderboard(),
                   db.getHealthScore(),
                   db.getApprovalRate(dateStr),
                   db.getTopRemovalReasons(dateStr),
+                  db.getGhostMods(),
                 ]);
 
                 const todayTotals = await db.getDailyTotals(dateStr);
@@ -132,7 +194,7 @@ Devvit.addCustomPostType({
                     heatmapData,
                     leaderboard,
                     healthScore,
-                    ghostMods: [],
+                    ghostMods,
                     lastActionAt: 0,
                     totalActionsToday,
                     approvalRate,
@@ -148,11 +210,16 @@ Devvit.addCustomPostType({
               }
             }
 
-            if (msg.type === 'NUDGE_GHOST_MODS') {
+            if (message.type === 'NUDGE_GHOST_MODS') {
               try {
                 // Security gate: moderators only
-                const modPerms = await context.reddit.getModeratorPermissions();
-                if (!modPerms || modPerms.length === 0) {
+                const subreddit = await context.reddit.getCurrentSubreddit();
+                const currentUser = await context.reddit.getCurrentUser();
+                const modsListing = await context.reddit.getModerators({ subredditName: subreddit.name });
+                const modList: User[] = modsListing.children;
+                const isModerator = modList.some((mod: User) => mod.username === currentUser?.username);
+
+                if (!isModerator) {
                   context.ui.webView.postMessage('modvigil-webview', {
                     type: 'ERROR',
                     payload: { message: 'Access denied: Moderators only' },
@@ -160,8 +227,13 @@ Devvit.addCustomPostType({
                   return;
                 }
 
-                const { ghostMods } = msg.payload;
-                const subreddit = await context.reddit.getCurrentSubreddit();
+                // Type guard for payload
+                if (!message.payload || typeof message.payload !== 'object' || !('ghostMods' in message.payload)) {
+                  throw new Error('Invalid payload for NUDGE_GHOST_MODS');
+                }
+
+                const payload = message.payload as { ghostMods: Array<{ username: string; lastActiveDays: number }> };
+                const { ghostMods } = payload;
 
                 for (const mod of ghostMods) {
                   await context.reddit.sendPrivateMessage({
@@ -195,6 +267,85 @@ The r/${subreddit.name} Mod Team (via ModVigil)`,
                 });
               }
             }
+
+            if (message.type === 'SAVE_SETTINGS') {
+              try {
+                // Security gate: moderators only
+                const subreddit = await context.reddit.getCurrentSubreddit();
+                const currentUser = await context.reddit.getCurrentUser();
+                const modsListing = await context.reddit.getModerators({ subredditName: subreddit.name });
+                const modList: User[] = modsListing.children;
+                const isModerator = modList.some((mod: User) => mod.username === currentUser?.username);
+
+                if (!isModerator) {
+                  context.ui.webView.postMessage('modvigil-webview', {
+                    type: 'ERROR',
+                    payload: { message: 'Access denied: Moderators only' },
+                  });
+                  return;
+                }
+
+                const { spikeThreshold, transparencyMode, enableWarnings } = message.payload as {
+                  spikeThreshold: number;
+                  transparencyMode: boolean;
+                  enableWarnings: boolean;
+                };
+
+                const subredditId = subreddit.id;
+                const db = new ModVigilRedis(context.redis, subredditId);
+
+                // Save settings to Redis (runtime-modifiable)
+                await db.saveSetting('spikeThreshold', spikeThreshold);
+                await db.saveSetting('transparencyMode', transparencyMode);
+                await db.saveSetting('enableWarnings', enableWarnings);
+
+                console.log(`✅ [ModVigil] Settings saved: threshold=${spikeThreshold}, transparency=${transparencyMode}, warnings=${enableWarnings}`);
+
+                context.ui.webView.postMessage('modvigil-webview', {
+                  type: 'SETTINGS_SAVED',
+                  payload: { success: true },
+                });
+              } catch (error) {
+                console.error('❌ [ModVigil] Error in SAVE_SETTINGS handler:', error);
+                context.ui.webView.postMessage('modvigil-webview', {
+                  type: 'ERROR',
+                  payload: { message: 'Failed to save settings' },
+                });
+              }
+            }
+
+            if (message.type === 'POPULATE_DEMO_DATA') {
+              try {
+                // Security gate: moderators only
+                const subreddit = await context.reddit.getCurrentSubreddit();
+                const currentUser = await context.reddit.getCurrentUser();
+                const modsListing = await context.reddit.getModerators({ subredditName: subreddit.name });
+                const modList: User[] = modsListing.children;
+                const isModerator = modList.some((mod: User) => mod.username === currentUser?.username);
+
+                if (!isModerator) {
+                  context.ui.webView.postMessage('modvigil-webview', {
+                    type: 'ERROR',
+                    payload: { message: 'Access denied: Moderators only' },
+                  });
+                  return;
+                }
+
+                const subredditId = subreddit.id;
+                const db = new ModVigilRedis(context.redis, subredditId);
+                await populateDemoData(db, subredditId);
+
+                context.ui.webView.postMessage('modvigil-webview', {
+                  type: 'DEMO_DATA_SUCCESS',
+                });
+              } catch (error) {
+                console.error('❌ [ModVigil] Error populating demo data:', error);
+                context.ui.webView.postMessage('modvigil-webview', {
+                  type: 'ERROR',
+                  payload: { message: 'Failed to populate demo data' },
+                });
+              }
+            }
           }}
         />
       </vstack>
@@ -205,7 +356,6 @@ The r/${subreddit.name} Mod Team (via ModVigil)`,
 // 4. Menu Items
 Devvit.addMenuItem({
   location: 'subreddit',
-  forModeratorsOnly: true,
   label: '📊 Open ModVigil Dashboard',
   onPress: async (_event, context) => {
     const subreddit = await context.reddit.getCurrentSubreddit();

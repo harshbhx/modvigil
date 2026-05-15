@@ -17,7 +17,7 @@ interface BarChartProps {
  * A "Beast Mode" SVG bar chart for ModVigil.
  * High fidelity, animated, and interactive.
  */
-export const BarChart: React.FC<BarChartProps> = ({ data, title, color = '#FF4500' }) => {
+export const BarChart: React.FC<BarChartProps> = ({ data, title, color = 'var(--color-primary)' }) => {
   const width = 450;
   const height = 240;
   const paddingX = 40;
@@ -32,15 +32,15 @@ export const BarChart: React.FC<BarChartProps> = ({ data, title, color = '#FF450
   return (
     <div className="chart-container">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-        <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 'bold', color: '#878A8C', textTransform: 'uppercase', letterSpacing: '1px' }}>{title}</h3>
-        <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#FF4500' }}>Live Action Ticker</div>
+        <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 'bold', color: 'var(--color-neutral-content-weak)', textTransform: 'uppercase', letterSpacing: '1px' }}>{title}</h3>
+        <div style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--color-primary)' }}>Live Action Ticker</div>
       </div>
-      <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} style={{ background: '#FFFFFF', borderRadius: '12px' }}>
+      <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} style={{ background: 'var(--color-neutral-background-strong)', borderRadius: '12px' }}>
         <style>{`
           .bar { transition: height 0.5s ease-out, y 0.5s ease-out, fill 0.2s; cursor: pointer; }
-          .bar:hover { fill: #0079D3; }
-          .grid-line { stroke: #EDEFF1; stroke-dasharray: 4, 4; }
-          .axis-text { fill: #878A8C; font-weight: 600; }
+          .bar:hover { fill: var(--color-primary-hover); }
+          .grid-line { stroke: var(--color-neutral-border); stroke-dasharray: 4, 4; }
+          .axis-text { fill: var(--color-neutral-content-weak); font-weight: 600; }
         `}</style>
         
         {/* Y-axis grid lines */}
@@ -70,7 +70,7 @@ export const BarChart: React.FC<BarChartProps> = ({ data, title, color = '#FF450
                 y={paddingY}
                 width={barWidth}
                 height={chartHeight}
-                fill="#F6F7F8"
+                fill="var(--color-neutral-background-weak)"
                 rx="4"
               />
               {/* Actual Data Bar */}
@@ -114,7 +114,7 @@ export const BarChart: React.FC<BarChartProps> = ({ data, title, color = '#FF450
         })}
 
         {/* Base line */}
-        <line x1={paddingX} y1={height - paddingY} x2={width - paddingX} y2={height - paddingY} stroke="#878A8C" strokeWidth="2" strokeLinecap="round" />
+        <line x1={paddingX} y1={height - paddingY} x2={width - paddingX} y2={height - paddingY} stroke="var(--color-neutral-content-weak)" strokeWidth="2" strokeLinecap="round" />
       </svg>
     </div>
   );
