@@ -1,6 +1,6 @@
 /** @jsxRuntime classic */
 /** @jsx React.createElement */
-import React, { useState } from 'react';
+import React from 'react';
 
 export const HelpModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   return (

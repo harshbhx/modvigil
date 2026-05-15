@@ -5,6 +5,7 @@ runtime: node20
 permissions:
   - modMail
   - modLog
+  - modContributors
   - privateMessages
   - identity
   - read

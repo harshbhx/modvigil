@@ -33,7 +33,7 @@ export const BarChart: React.FC<BarChartProps> = ({ data, title, color = 'var(--
     <div className="chart-container">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
         <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 'bold', color: 'var(--color-neutral-content-weak)', textTransform: 'uppercase', letterSpacing: '1px' }}>{title}</h3>
-        <div style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--color-primary)' }}>Live Action Ticker</div>
+        <div style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--color-primary)' }}>{title}</div>
       </div>
       <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} style={{ background: 'var(--color-neutral-background-strong)', borderRadius: '12px' }}>
         <style>{`

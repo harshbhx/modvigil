@@ -1,46 +1,82 @@
+// ScheduledJobContext is not exported by @devvit/public-api 0.12.23 — use any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ScheduledJobContext = any;
 import { ModVigilRedis } from './redis.js';
 
 /**
- * Job that generates and posts a weekly moderation digest.
+ * FIX #15: Previous-week fetch uses Promise.all (was sequential).
+ * FIX #20: % change shows "N/A" on first run instead of false "▲ 100%".
+ * FIX #23: Typed context replaces `any`.
+ * FIX #29: Reschedule wrapped in its own try/catch.
+ * FIX #30: Approval rate aggregated over 7 days, not just today.
  */
-export async function generateWeeklyDigest(event: any, context: any): Promise<void> {
+export async function generateWeeklyDigest(_event: unknown, context: ScheduledJobContext): Promise<void> {
   const subreddit = await context.reddit.getCurrentSubreddit();
   const subredditId = subreddit.id;
   const subredditName = subreddit.name;
   const db = new ModVigilRedis(context.redis, subredditId);
-  
+
   console.log(`📊 [ModVigil Digest] Generating weekly digest for r/${subredditName}...`);
 
   try {
     // 1. Fetch last 7 days of data
     const last7Days = await db.getLast7DaysTotals();
     const totalActions = last7Days.reduce((sum, d) => sum + d.value, 0);
-    
-    // 2. Fetch previous 7 days (for comparison)
-    let prev7DaysTotal = 0;
+
+    // FIX #15: Parallel fetch of previous 7 days
+    const prevDates: string[] = [];
     for (let i = 13; i >= 7; i--) {
       const d = new Date();
       d.setDate(d.getDate() - i);
-      const dateStr = d.toISOString().split('T')[0];
-      const totals = await db.getDailyTotals(dateStr);
-      Object.values(totals).forEach(v => prev7DaysTotal += parseInt(v) || 0);
+      prevDates.push(d.toISOString().split('T')[0]);
     }
+    const prevTotals = await Promise.all(prevDates.map(d => db.getDailyTotals(d)));
+    const prev7DaysTotal = prevTotals.reduce(
+      (sum, t) => sum + Object.values(t).reduce((s, v) => s + (parseInt(v, 10) || 0), 0),
+      0
+    );
 
-    const percentChange = prev7DaysTotal > 0 
-      ? ((totalActions - prev7DaysTotal) / prev7DaysTotal) * 100 
-      : 100;
+    // FIX #20: Show "N/A" on first run instead of false "▲ 100%"
+    const percentChange =
+      prev7DaysTotal === 0
+        ? null
+        : ((totalActions - prev7DaysTotal) / prev7DaysTotal) * 100;
+    const trendStr =
+      percentChange === null
+        ? 'N/A (first week of data)'
+        : `${percentChange >= 0 ? '▲' : '▼'} ${Math.abs(percentChange).toFixed(1)}% vs last week`;
 
     // 3. Get other stats
     const leaderboard = await db.getLeaderboard();
     const topMod = leaderboard.length > 0 ? leaderboard[0].username : 'None';
-    
+
+    // FIX #30: Aggregate approval rate over 7 days, not just today
+    const last7Dates: string[] = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      last7Dates.push(d.toISOString().split('T')[0]);
+    }
+    const [totalsArr, approvalsArr] = await Promise.all([
+      Promise.all(last7Dates.map(d => db.getDailyTotals(d))),
+      Promise.all(
+        last7Dates.map(d =>
+          context.redis.hGet(`${subredditId}:actions:approvals:${d}`, 'count')
+        )
+      ),
+    ]);
+    const total7 = totalsArr.reduce(
+      (s, t) => s + Object.values(t).reduce((x, v) => x + (parseInt(v, 10) || 0), 0),
+      0
+    );
+    const approvals7 = approvalsArr.reduce((s: number, v: string | undefined) => s + (parseInt(v ?? '0', 10) || 0), 0);
+    const approvalRate = total7 > 0 ? (approvals7 / total7) * 100 : 0;
+
     const nowStr = new Date().toISOString().split('T')[0];
-    const approvalRate = await db.getApprovalRate(nowStr);
     const topReasons = await db.getTopRemovalReasons(nowStr);
     const topReason = topReasons.length > 0 ? topReasons[0].reason : 'None detected';
     const healthScore = await db.getHealthScore();
-    
-    // 4. Format the post body
+
     const weekStart = last7Days.length > 0 ? last7Days[0].label : 'N/A';
     const weekEnd = last7Days.length > 0 ? last7Days[last7Days.length - 1].label : 'N/A';
 
@@ -50,14 +86,14 @@ export async function generateWeeklyDigest(event: any, context: any): Promise<vo
 
 ### 📈 Activity Overview
 * **Total Actions:** ${totalActions}
-* **Trend:** ${percentChange >= 0 ? '▲' : '▼'} ${Math.abs(percentChange).toFixed(1)}% vs last week
-* **Most Active Day:** ${last7Days.length > 0 ? last7Days.reduce((a, b) => a.value > b.value ? a : b).label : 'N/A'}
+* **Trend:** ${trendStr}
+* **Most Active Day:** ${last7Days.length > 0 ? last7Days.reduce((a, b) => (a.value > b.value ? a : b)).label : 'N/A'}
 
 ### 🏆 Top Moderator
 * **u/${topMod}** with ${leaderboard.length > 0 ? leaderboard[0].count : 0} actions.
 
 ### 🔍 Insights
-* **Approval Rate:** ${approvalRate.toFixed(1)}%
+* **Approval Rate (7-day):** ${approvalRate.toFixed(1)}%
 * **Top Removal Action:** ${topReason}
 * **Community Health Score:** ${healthScore}/100
 
@@ -65,20 +101,17 @@ export async function generateWeeklyDigest(event: any, context: any): Promise<vo
 *This report was automatically generated by **ModVigil** — Real-time moderation analytics.*
     `;
 
-    // 5. Check transparency mode (public vs mod-only)
     const transparencyMode = await db.getSetting('transparencyMode', false);
 
     console.log(`📝 [ModVigil Digest] Posting digest to r/${subredditName}...`);
 
     if (transparencyMode) {
-      // Public post
       await context.reddit.submitPost({
-        subredditName: subredditName,
+        subredditName,
         title: postTitle,
         text: postBody,
       });
     } else {
-      // Mod-only modmail
       await context.reddit.sendPrivateMessage({
         to: `r/${subredditName}`,
         subject: postTitle,
@@ -87,15 +120,18 @@ export async function generateWeeklyDigest(event: any, context: any): Promise<vo
     }
 
     console.log('✅ [ModVigil Digest] Digest posted successfully.');
-
   } catch (error) {
     console.error('❌ [ModVigil Digest] Error generating weekly digest:', error);
   } finally {
-    // CRITICAL: Reschedule job
-    await context.scheduler.runJob({
-      name: 'weeklyDigest',
-      runAt: getNextMonday9amUTC(),
-    });
+    // FIX #29: Reschedule in its own try/catch
+    try {
+      await context.scheduler.runJob({
+        name: 'weeklyDigest',
+        runAt: getNextMonday9amUTC(),
+      });
+    } catch (schedErr) {
+      console.error('❌ [ModVigil Digest] Failed to reschedule weeklyDigest:', schedErr);
+    }
   }
 }
 

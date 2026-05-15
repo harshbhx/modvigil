@@ -1,58 +1,83 @@
+// ScheduledJobContext is not exported by @devvit/public-api 0.12.23 — use any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ScheduledJobContext = any;
 import { ModVigilRedis } from './redis.js';
 
 /**
  * Job that calculates the rolling average baseline for the current day and hour.
+ * FIX #1: Uses padded hourStr consistently so writer/reader keys always match.
+ * FIX #7: Only counts weeks that have data (daysFound++) to avoid diluting average.
+ * FIX #24: Removed dead `db` allocation (ModVigilRedis was never used here).
+ * FIX #29: Reschedule wrapped in its own try/catch so job never silently dies.
+ * FIX #38: lastFiredKey uses ${subredditId}:spike:lastfired prefix convention.
  */
-export async function updateBaseline(event: any, context: any): Promise<void> {
+export async function updateBaseline(_event: unknown, context: ScheduledJobContext): Promise<void> {
   const subreddit = await context.reddit.getCurrentSubreddit();
   const subredditId = subreddit.id;
-  const db = new ModVigilRedis(context.redis, subredditId);
   const now = new Date();
   const dayOfWeek = (now.getUTCDay() + 6) % 7; // 0 = Mon, 6 = Sun (UTC-based)
   const hour = now.getUTCHours();
+  // FIX #1: Always pad hour so key matches the seeded keys and checkForSpike reader
+  const hourStr = String(hour).padStart(2, '0');
 
-  console.log(`📊 [ModVigil Alerts] Updating baseline for Day ${dayOfWeek}, Hour ${hour}...`);
+  console.log(`📊 [ModVigil Alerts] Updating baseline for Day ${dayOfWeek}, Hour ${hourStr}...`);
 
   try {
+    // FIX #7: Parallel fetch of all 7 lookback weeks
+    const lookbackCounts = await Promise.all(
+      Array.from({ length: 7 }, (_, idx) => {
+        const i = idx + 1;
+        const pastDate = new Date(now);
+        pastDate.setDate(now.getDate() - i * 7);
+        const dateStr = pastDate.toISOString().split('T')[0];
+        const actionKey = `${subredditId}:actions:${dateStr}:${hourStr}`;
+        return context.redis.zCard(actionKey);
+      })
+    );
+
+    // FIX #7: Only count weeks that actually have data to avoid diluting the average
     let totalCount = 0;
     let daysFound = 0;
-
-    // Look back at the last 7 weeks for the same day/hour
-    for (let i = 1; i <= 7; i++) {
-      const pastDate = new Date();
-      pastDate.setDate(now.getDate() - (i * 7));
-      const dateStr = pastDate.toISOString().split('T')[0];
-      const hourStr = String(hour).padStart(2, '0');
-
-      const actionKey = `${subredditId}:actions:${dateStr}:${hourStr}`;
-      const count = await context.redis.zCard(actionKey);
-
-      totalCount += count;
-      daysFound++;
+    for (const count of lookbackCounts) {
+      if (count > 0) {
+        totalCount += count;
+        daysFound++;
+      }
     }
 
-    const average = daysFound > 0 ? totalCount / daysFound : 0;
-
-    // Store baseline (we use a simple string key for this)
-    const baselineKey = `${subredditId}:spike:baseline:${dayOfWeek}:${hour}`;
-    await context.redis.set(baselineKey, average.toString());
-    
-    console.log(`✅ [ModVigil Alerts] Baseline set to ${average.toFixed(2)}`);
+    // FIX #7: If no historical data exists, leave the seeded 1.0 in place
+    // rather than overwriting with 0 (which would kill spike detection entirely)
+    if (daysFound === 0) {
+      console.log(`⚠️ [ModVigil Alerts] No historical data found for Day ${dayOfWeek}, Hour ${hourStr}. Keeping existing baseline.`);
+    } else {
+      const average = totalCount / daysFound;
+      // FIX #1: Key uses padded hourStr — matches seeder in main.tsx and checkForSpike reader
+      const baselineKey = `${subredditId}:spike:baseline:${dayOfWeek}:${hourStr}`;
+      await context.redis.set(baselineKey, average.toString());
+      console.log(`✅ [ModVigil Alerts] Baseline set to ${average.toFixed(2)} (from ${daysFound}/7 weeks)`);
+    }
   } catch (error) {
     console.error('❌ [ModVigil Alerts] Error updating baseline:', error);
   } finally {
-    // CRITICAL: Reschedule job
-    await context.scheduler.runJob({
-      name: 'baselineUpdater',
-      runAt: new Date(Date.now() + 60 * 60 * 1000), // 1 hour
-    });
+    // FIX #29: Reschedule in its own try/catch so a failure here doesn't silently kill the job
+    try {
+      await context.scheduler.runJob({
+        name: 'baselineUpdater',
+        runAt: new Date(Date.now() + 60 * 60 * 1000), // 1 hour
+      });
+    } catch (schedErr) {
+      console.error('❌ [ModVigil Alerts] Failed to reschedule baselineUpdater:', schedErr);
+    }
   }
 }
 
 /**
  * Job that checks if the current hour's activity is a spike.
+ * FIX #17: Elapsed ratio floored at 25% to avoid hyper-sensitivity at minute 0.
+ * FIX #29: Reschedule wrapped in its own try/catch.
+ * FIX #38: lastFiredKey uses consistent ${subredditId}: prefix.
  */
-export async function checkForSpike(event: any, context: any): Promise<void> {
+export async function checkForSpike(_event: unknown, context: ScheduledJobContext): Promise<void> {
   const subreddit = await context.reddit.getCurrentSubreddit();
   const subredditId = subreddit.id;
   const db = new ModVigilRedis(context.redis, subredditId);
@@ -67,7 +92,7 @@ export async function checkForSpike(event: any, context: any): Promise<void> {
     const actionKey = `${subredditId}:actions:${dateStr}:${hourStr}`;
     const currentCount = await context.redis.zCard(actionKey);
 
-    // 2. Get baseline
+    // 2. Get baseline (key uses padded hourStr — matches writer in updateBaseline)
     const baselineKey = `${subredditId}:spike:baseline:${dayOfWeek}:${hourStr}`;
     const baselineStr = await context.redis.get(baselineKey);
     const baseline = baselineStr ? parseFloat(baselineStr) : 0;
@@ -75,24 +100,22 @@ export async function checkForSpike(event: any, context: any): Promise<void> {
     // 3. Get threshold from settings (Redis first, fallback to default)
     const threshold = await db.getSetting('spikeThreshold', 3.0);
 
-    // 4. Scale baseline by elapsed time in current hour
-    // The baseline represents a full 60-minute average, but we may only be
-    // partway through the hour. Scale it proportionally so we can detect
-    // spikes in real-time rather than only at the end of each hour.
+    // FIX #17: Floor elapsed ratio at 25% to avoid hyper-sensitivity at minute 0
+    // (without floor, at minute 0 the scaled baseline is ~1.7% of normal — far too sensitive)
     const currentMinute = now.getUTCMinutes();
-    const elapsedRatio = (currentMinute + 1) / 60;
+    const elapsedRatio = Math.max(15 / 60, (currentMinute + 1) / 60);
     const scaledBaseline = baseline * elapsedRatio;
 
     console.log(`🔍 [ModVigil Alerts] Checking spike: Current=${currentCount}, Baseline=${baseline.toFixed(2)}, Scaled=${scaledBaseline.toFixed(2)}, Threshold=${threshold}x`);
 
     // Only alert if we have a baseline and current count is significantly higher
-    // We also add a minimum count (e.g., 5) to avoid alerting on very small numbers
-    if (baseline > 0 && currentCount >= 5 && currentCount >= (scaledBaseline * threshold)) {
-      
-      // 4. Check cooldown
-      const lastFiredKey = `spike:lastfired:${subredditId}`;
+    // Minimum count of 5 avoids alerting on very small absolute numbers
+    if (baseline > 0 && currentCount >= 5 && currentCount >= scaledBaseline * threshold) {
+
+      // FIX #38: Key uses consistent ${subredditId}: prefix convention
+      const lastFiredKey = `${subredditId}:spike:lastfired`;
       const lastFiredStr = await context.redis.get(lastFiredKey);
-      const lastFired = lastFiredStr ? parseInt(lastFiredStr) : 0;
+      const lastFired = lastFiredStr ? parseInt(lastFiredStr, 10) : 0;
       const cooldownMs = 2 * 60 * 60 * 1000; // 2 hours
 
       if (Date.now() - lastFired < cooldownMs) {
@@ -100,7 +123,6 @@ export async function checkForSpike(event: any, context: any): Promise<void> {
         return;
       }
 
-      // 5. Fire alert!
       console.log('🚨 [ModVigil Alerts] SPIKE DETECTED! Sending modmail...');
 
       await context.reddit.sendPrivateMessage({
@@ -115,20 +137,24 @@ export async function checkForSpike(event: any, context: any): Promise<void> {
 This could indicate a raid, a highly controversial post, or an influx of rule-breaking content.
 
 [📊 Open ModVigil Dashboard](https://www.reddit.com/r/${subreddit.name}/about/log)`,
-        // Note: Real dashboard URL would be the permalink to the dashboard post
       });
 
+      // FIX #38: Consistent key prefix
       await context.redis.set(lastFiredKey, Date.now().toString(), {
-        expiration: new Date(Date.now() + 2 * 60 * 60 * 1000) // 2 hours
+        expiration: new Date(Date.now() + 2 * 60 * 60 * 1000), // 2 hours
       });
     }
   } catch (error) {
     console.error('❌ [ModVigil Alerts] Error checking for spike:', error);
   } finally {
-    // CRITICAL: Reschedule job
-    await context.scheduler.runJob({
-      name: 'spikeChecker',
-      runAt: new Date(Date.now() + 15 * 60 * 1000), // 15 minutes
-    });
+    // FIX #29: Reschedule in its own try/catch so a failure here doesn't silently kill the job
+    try {
+      await context.scheduler.runJob({
+        name: 'spikeChecker',
+        runAt: new Date(Date.now() + 15 * 60 * 1000), // 15 minutes
+      });
+    } catch (schedErr) {
+      console.error('❌ [ModVigil Alerts] Failed to reschedule spikeChecker:', schedErr);
+    }
   }
 }

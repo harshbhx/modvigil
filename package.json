@@ -10,14 +10,13 @@
   },
   "dependencies": {
     "@devvit/public-api": "0.12.23",
-    "@devvit/web": "0.12.23",
-    "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"
   },
   "devDependencies": {
     "@devvit/cli": "0.12.23",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
     "typescript": "5.4.5",
     "vitest": "1.6.0"
   },
