@@ -44,6 +44,18 @@ Devvit.addTrigger({
   },
 });
 
+Devvit.addTrigger({
+  event: 'AppUpgrade',
+  onEvent: async (event, context) => {
+    try {
+      console.log(`🔄 [ModVigil] App upgraded in r/${event.subreddit?.name}`);
+      // Future: Add migration logic here if schema changes
+    } catch (error) {
+      console.error('❌ [ModVigil] Error in AppUpgrade trigger:', error);
+    }
+  },
+});
+
 // 2. Scheduler Jobs
 Devvit.addSchedulerJob({
   name: 'spikeChecker',

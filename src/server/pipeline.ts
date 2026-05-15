@@ -59,6 +59,7 @@ export async function handleModAction(event: ModAction, context: TriggerContext)
         // 2. Track removal reasons if available
         const reason = details || action; // Fallback to action if no explicit details
         await context.redis.hIncrBy(`actions:reasons:${dateStr}`, reason, 1);
+        await context.redis.expire(`actions:reasons:${dateStr}`, 60 * 60 * 24 * 90);
         
         console.log(`⚠️ [ModVigil Pipeline] User u/${userId} now has ${newCount} removals.`);
         
@@ -75,6 +76,7 @@ export async function handleModAction(event: ModAction, context: TriggerContext)
     const approvalActions = ['approvepost', 'approvecomment', 'approvelink'];
     if (approvalActions.includes(action.toLowerCase())) {
       await context.redis.hIncrBy(`actions:approvals:${dateStr}`, 'count', 1);
+      await context.redis.expire(`actions:approvals:${dateStr}`, 60 * 60 * 24 * 90);
     }
     
   } catch (error) {

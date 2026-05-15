@@ -69,11 +69,21 @@ export async function generateWeeklyDigest(event: any, context: ScheduledJobCont
 
     console.log(`📝 [ModVigil Digest] Posting digest to r/${subredditName}...`);
 
-    await context.reddit.submitPost({
-      subredditName: subredditName,
-      title: postTitle,
-      text: postBody,
-    });
+    if (transparencyMode) {
+      // Public post
+      await context.reddit.submitPost({
+        subredditName: subredditName,
+        title: postTitle,
+        text: postBody,
+      });
+    } else {
+      // Mod-only modmail
+      await context.reddit.sendPrivateMessage({
+        to: `r/${subredditName}`,
+        subject: postTitle,
+        text: postBody,
+      });
+    }
 
     console.log('✅ [ModVigil Digest] Digest posted successfully.');
     
