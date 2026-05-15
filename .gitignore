@@ -23,6 +23,7 @@ gemini.md
 MEMORY.md
 claude.md
 CLAUDE.md
+SUBCLAUDE.md
 *.ai.md
 skills-lock.json
 .gemini/
@@ -31,11 +32,23 @@ skills-lock.json
 .anthropic/
 .cursor/
 ai_notes/
+
+# Internal documentation (not for public repo)
+HANDOFF.md
+MASTER_AUDIT_REPORT.md
+HACKATHON_SUBMISSION_CHECKLIST.md
+BEAST_MODE_FIXES.md
 docs/Ai_prompts.md
 docs/CURRENT_STATE.md
 docs/AUDIT_REPORT.md
 docs/AI_CONTEXT_MASTER.md
 docs/REVIEW_REPORT.md
+docs/TECHNICAL_AUDIT.md
+docs/context.md
+docs/Buildchecklist.md
+docs/current/
+docs/planning/
+docs/archive/
 
 # Editors
 .vscode/
