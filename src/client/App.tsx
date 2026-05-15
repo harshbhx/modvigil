@@ -1,3 +1,5 @@
+/** @jsxRuntime classic */
+/** @jsx React.createElement */
 import React, { useEffect, useState } from 'react';
 import { BarChart } from './Charts.js';
 import { Heatmap } from './Heatmap.js';

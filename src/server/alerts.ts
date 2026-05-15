@@ -1,10 +1,9 @@
-import { ScheduledJobContext } from '@devvit/public-api';
 import { ModVigilRedis } from './redis.js';
 
 /**
  * Job that calculates the rolling average baseline for the current day and hour.
  */
-export async function updateBaseline(event: any, context: ScheduledJobContext): Promise<void> {
+export async function updateBaseline(event: any, context: any): Promise<void> {
   const subreddit = await context.reddit.getCurrentSubreddit();
   const subredditId = subreddit.id;
   const db = new ModVigilRedis(context.redis, subredditId);
@@ -23,8 +22,8 @@ export async function updateBaseline(event: any, context: ScheduledJobContext): 
       const pastDate = new Date();
       pastDate.setDate(now.getDate() - (i * 7));
       const dateStr = pastDate.toISOString().split('T')[0];
-      
-      const actionKey = `actions:${dateStr}:${hour}`;
+
+      const actionKey = `${subredditId}:actions:${dateStr}:${hour}`;
       const count = await context.redis.zCard(actionKey);
       
       totalCount += count;
@@ -32,9 +31,9 @@ export async function updateBaseline(event: any, context: ScheduledJobContext): 
     }
 
     const average = daysFound > 0 ? totalCount / daysFound : 0;
-    
+
     // Store baseline (we use a simple string key for this)
-    const baselineKey = `spike:baseline:${dayOfWeek}:${hour}`;
+    const baselineKey = `${subredditId}:spike:baseline:${dayOfWeek}:${hour}`;
     await context.redis.set(baselineKey, average.toString());
     
     console.log(`✅ [ModVigil Alerts] Baseline set to ${average.toFixed(2)}`);
@@ -46,7 +45,7 @@ export async function updateBaseline(event: any, context: ScheduledJobContext): 
 /**
  * Job that checks if the current hour's activity is a spike.
  */
-export async function checkForSpike(event: any, context: ScheduledJobContext): Promise<void> {
+export async function checkForSpike(event: any, context: any): Promise<void> {
   const subreddit = await context.reddit.getCurrentSubreddit();
   const subredditId = subreddit.id;
   const db = new ModVigilRedis(context.redis, subredditId);
@@ -57,11 +56,11 @@ export async function checkForSpike(event: any, context: ScheduledJobContext): P
 
   try {
     // 1. Get current count
-    const actionKey = `actions:${dateStr}:${hour}`;
+    const actionKey = `${subredditId}:actions:${dateStr}:${hour}`;
     const currentCount = await context.redis.zCard(actionKey);
 
     // 2. Get baseline
-    const baselineKey = `spike:baseline:${dayOfWeek}:${hour}`;
+    const baselineKey = `${subredditId}:spike:baseline:${dayOfWeek}:${hour}`;
     const baselineStr = await context.redis.get(baselineKey);
     const baseline = baselineStr ? parseFloat(baselineStr) : 0;
 

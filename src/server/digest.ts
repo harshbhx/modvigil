@@ -1,10 +1,9 @@
-import { ScheduledJobContext } from '@devvit/public-api';
 import { ModVigilRedis } from './redis.js';
 
 /**
  * Job that generates and posts a weekly moderation digest.
  */
-export async function generateWeeklyDigest(event: any, context: ScheduledJobContext): Promise<void> {
+export async function generateWeeklyDigest(event: any, context: any): Promise<void> {
   const subreddit = await context.reddit.getCurrentSubreddit();
   const subredditId = subreddit.id;
   const subredditName = subreddit.name;

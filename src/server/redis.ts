@@ -44,14 +44,14 @@ export class ModVigilRedis {
         await this.redis.expire(modKey, 60 * 60 * 24 * 90);
 
         const lastActiveKey = `${this.subredditId}:mod:lastactive:${actionData.moderator.name}`;
-        await this.redis.set(lastActiveKey, timestamp.toString(), { ex: 60 * 60 * 24 * 90 });
+        await this.redis.set(lastActiveKey, timestamp.toString(), { expiration: new Date(Date.now() + 60 * 60 * 24 * 90 * 1000) });
 
         // 4. Update global mod leaderboard (with TTL to prevent unbounded growth)
         await this.redis.zIncrBy(`${this.subredditId}:mod:leaderboard`, actionData.moderator.name, 1);
         await this.redis.expire(`${this.subredditId}:mod:leaderboard`, 60 * 60 * 24 * 90);
 
-        // 5. Track moderator in set for ghost detection
-        await this.redis.sAdd(`${this.subredditId}:mod:all`, actionData.moderator.name);
+        // 5. Track moderator in set for ghost detection (using sorted set with score 0)
+        await this.redis.zAdd(`${this.subredditId}:mod:all`, { member: actionData.moderator.name, score: 0 });
         await this.redis.expire(`${this.subredditId}:mod:all`, 60 * 60 * 24 * 90);
       }
     } catch (error) {
@@ -62,7 +62,7 @@ export class ModVigilRedis {
 
   async getDailyTotals(dateStr: string): Promise<Record<string, string>> {
     try {
-      const totalKey = `actions:total:${dateStr}`;
+      const totalKey = `${this.subredditId}:actions:total:${dateStr}`;
       return await this.redis.hGetAll(totalKey);
     } catch (error) {
       console.error('❌ [ModVigil Redis] Error getting daily totals:', error);
@@ -115,7 +115,7 @@ export class ModVigilRedis {
         const dayOfWeek = (d.getDay() + 6) % 7; // 0 = Mon, 6 = Sun
 
         for (let hour = 0; hour < 24; hour++) {
-          const actionKey = `actions:${dateStr}:${hour}`;
+          const actionKey = `${this.subredditId}:actions:${dateStr}:${hour}`;
           promises.push(
             this.redis.zCard(actionKey).then(count => ({ day: dayOfWeek, hour, count }))
           );
@@ -142,7 +142,7 @@ export class ModVigilRedis {
    */
   async getLeaderboard(): Promise<{ username: string; count: number }[]> {
     try {
-      const leaderboard = await this.redis.zRange('mod:leaderboard', 0, 9, { reverse: true, by: 'rank' });
+      const leaderboard = await this.redis.zRange(`${this.subredditId}:mod:leaderboard`, 0, 9, { reverse: true, by: 'rank' });
 
       return leaderboard.map(item => ({
         username: item.member,
@@ -160,18 +160,20 @@ export class ModVigilRedis {
    */
   async getGhostMods(): Promise<{ username: string; lastActiveDays: number }[]> {
     try {
-      const allMods = await this.redis.sMembers('mod:all');
+      // Get all moderators (using sorted set instead of regular set)
+      const allModsData = await this.redis.zRange(`${this.subredditId}:mod:all`, 0, -1);
+      const allMods = allModsData.map(item => item.member);
       const now = Date.now();
       const ghostMods: { username: string; lastActiveDays: number }[] = [];
 
       // Batch fetch all last active timestamps in parallel
-      const lastActivePromises = allMods.map(mod =>
-        this.redis.get(`mod:lastactive:${mod}`).then(lastActiveStr => ({ mod, lastActiveStr }))
+      const lastActivePromises = allMods.map((mod: string) =>
+        this.redis.get(`${this.subredditId}:mod:lastactive:${mod}`).then((lastActiveStr: string | undefined) => ({ mod, lastActiveStr: lastActiveStr || null }))
       );
 
       const results = await Promise.all(lastActivePromises);
 
-      results.forEach(({ mod, lastActiveStr }) => {
+      results.forEach(({ mod, lastActiveStr }: { mod: string; lastActiveStr: string | null }) => {
         if (lastActiveStr) {
           const lastActive = parseInt(lastActiveStr);
           const diffDays = Math.floor((now - lastActive) / (1000 * 60 * 60 * 24));
@@ -193,8 +195,8 @@ export class ModVigilRedis {
    */
   async getApprovalRate(dateStr: string): Promise<number> {
     try {
-      const totalKey = `actions:total:${dateStr}`;
-      const approvalKey = `actions:approvals:${dateStr}`;
+      const totalKey = `${this.subredditId}:actions:total:${dateStr}`;
+      const approvalKey = `${this.subredditId}:actions:approvals:${dateStr}`;
 
       const totals = await this.getDailyTotals(dateStr);
       const approvalData = await this.redis.hGet(approvalKey, 'count');
@@ -215,7 +217,7 @@ export class ModVigilRedis {
    */
   async getTopRemovalReasons(dateStr: string): Promise<{ reason: string; count: number }[]> {
     try {
-      const reasonsKey = `actions:reasons:${dateStr}`;
+      const reasonsKey = `${this.subredditId}:actions:reasons:${dateStr}`;
       const reasons = await this.redis.hGetAll(reasonsKey);
 
       return Object.entries(reasons)

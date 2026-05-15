@@ -18,34 +18,22 @@ Thumbs.db
 .devvit/
 
 # AI and Gemini CLI files
-GEMINI.md
-gemini.md
-MEMORY.md
-claude.md
-CLAUDE.md
-SUBCLAUDE.md
-*.ai.md
-skills-lock.json
 .gemini/
 .agents/
 .claude/
 .anthropic/
 .cursor/
 ai_notes/
+skills-lock.json
 
-# Internal documentation (not for public repo)
-HANDOFF.md
-MASTER_AUDIT_REPORT.md
-HACKATHON_SUBMISSION_CHECKLIST.md
-BEAST_MODE_FIXES.md
-docs/Ai_prompts.md
-docs/CURRENT_STATE.md
-docs/AUDIT_REPORT.md
-docs/AI_CONTEXT_MASTER.md
-docs/REVIEW_REPORT.md
-docs/TECHNICAL_AUDIT.md
-docs/context.md
-docs/Buildchecklist.md
+# Markdown Files
+*.md
+!README.md
+!docs/Architecture.md
+!docs/DEVVIT_DOCS.md
+!docs/prd.md
+
+# Internal documentation directories
 docs/current/
 docs/planning/
 docs/archive/

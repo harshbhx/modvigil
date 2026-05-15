@@ -8,25 +8,30 @@ import { handleUserWarning } from './warnings.js';
  */
 export async function handleModAction(event: ModAction, context: TriggerContext): Promise<void> {
   try {
-    const { action, moderator, subreddit, targetPost, targetComment, targetUser, details } = event;
-    const subredditId = subreddit?.id || 'unknown';
-    const subredditName = subreddit?.name || 'unknown';
+    // ModAction event structure in Devvit SDK v0.12.23
+    const action = (event as any).action || 'unknown';
+    const moderatorId = event.moderatorId || 'unknown';
+    const moderatorName = event.moderatorName || 'unknown';
+    const subredditId = event.subredditId || context.subredditId || 'unknown';
+    const subredditName = event.subredditName || 'unknown';
+    const targetId = (event as any).target?.id || (event as any).targetId || 'unknown';
+    const targetAuthor = (event as any).targetAuthor?.name || (event as any).target?.author || 'unknown';
     const dateStr = new Date().toISOString().split('T')[0];
 
-    console.log(`📡 [ModVigil Pipeline] Processing ${action} by u/${moderator?.name}`);
+    console.log(`📡 [ModVigil Pipeline] Processing ${action} by u/${moderatorName}`);
 
     const db = new ModVigilRedis(context.redis, subredditId);
 
     await db.recordAction({
       action,
-      moderator: moderator ? { id: moderator.id, name: moderator.name } : null,
-      targetId: targetPost?.id || targetComment?.id || targetUser?.id,
+      moderator: { id: moderatorId, name: moderatorName },
+      targetId: targetId,
       timestamp: Date.now(),
     });
 
     // --- NEW MOD AUTO-ONBOARDING ---
-    if (action.toLowerCase() === 'addmoderator' && targetUser?.name) {
-      console.log(`🎉 [ModVigil Onboarding] New moderator added: u/${targetUser.name}`);
+    if (action.toLowerCase() === 'addmoderator' && targetAuthor) {
+      console.log(`🎉 [ModVigil Onboarding] New moderator added: u/${targetAuthor}`);
       
       const topReasons = await db.getTopRemovalReasons(dateStr);
       let rulesText = "Review community rules to get started.";
@@ -35,9 +40,9 @@ export async function handleModAction(event: ModAction, context: TriggerContext)
       }
 
       await context.reddit.sendPrivateMessage({
-        to: targetUser.name,
+        to: targetAuthor,
         subject: `Welcome to the r/${subredditName} Moderation Team! 🛡️`,
-        text: `Hello u/${targetUser.name},\n\nWelcome to the team! **ModVigil** is installed on this subreddit to help us track analytics and automate warnings.\n\n### Quick Start Guide\n1. **Always add a removal reason** when removing posts/comments. ModVigil tracks these to build our community health score.\n2. ${rulesText}\n3. You can view real-time moderation analytics, spike alerts, and your own activity stats on the ModVigil Dashboard.\n\n[📊 Open ModVigil Dashboard](https://www.reddit.com/r/${subredditName}/about/log)\n\nGood luck!`,
+        text: `Hello u/${targetAuthor},\n\nWelcome to the team! **ModVigil** is installed on this subreddit to help us track analytics and automate warnings.\n\n### Quick Start Guide\n1. **Always add a removal reason** when removing posts/comments. ModVigil tracks these to build our community health score.\n2. ${rulesText}\n3. You can view real-time moderation analytics, spike alerts, and your own activity stats on the ModVigil Dashboard.\n\n[📊 Open ModVigil Dashboard](https://www.reddit.com/r/${subredditName}/about/log)\n\nGood luck!`,
       });
     }
 
@@ -45,21 +50,21 @@ export async function handleModAction(event: ModAction, context: TriggerContext)
     // If the action is a removal, track it for the target user
     const removalActions = ['removepost', 'removecomment', 'spamlink', 'spamcomment', 'removelink'];
     const isRemoval = removalActions.includes(action.toLowerCase());
-    
+
     if (isRemoval) {
-      const userId = targetUser?.name || targetPost?.authorName || targetComment?.authorName;
-      
+      const userId = targetAuthor;
+
       if (userId && userId !== '[deleted]' && userId !== 'AutoModerator') {
         const warnCountKey = `warn:count:${subredditId}:${userId}`;
-        
+
         // 1. Increment warning count (TTL 30 days)
         const newCount = await context.redis.incrBy(warnCountKey, 1);
         await context.redis.expire(warnCountKey, 30 * 24 * 60 * 60);
-        
+
         // 2. Track removal reasons if available
-        const reason = details || action; // Fallback to action if no explicit details
-        await context.redis.hIncrBy(`actions:reasons:${dateStr}`, reason, 1);
-        await context.redis.expire(`actions:reasons:${dateStr}`, 60 * 60 * 24 * 90);
+        const reason = event.details || action; // Fallback to action if no explicit details
+        await context.redis.hIncrBy(`${subredditId}:actions:reasons:${dateStr}`, reason, 1);
+        await context.redis.expire(`${subredditId}:actions:reasons:${dateStr}`, 60 * 60 * 24 * 90);
         
         console.log(`⚠️ [ModVigil Pipeline] User u/${userId} now has ${newCount} removals.`);
         
@@ -75,8 +80,8 @@ export async function handleModAction(event: ModAction, context: TriggerContext)
     // Track Approval Rate logic
     const approvalActions = ['approvepost', 'approvecomment', 'approvelink'];
     if (approvalActions.includes(action.toLowerCase())) {
-      await context.redis.hIncrBy(`actions:approvals:${dateStr}`, 'count', 1);
-      await context.redis.expire(`actions:approvals:${dateStr}`, 60 * 60 * 24 * 90);
+      await context.redis.hIncrBy(`${subredditId}:actions:approvals:${dateStr}`, 'count', 1);
+      await context.redis.expire(`${subredditId}:actions:approvals:${dateStr}`, 60 * 60 * 24 * 90);
     }
     
   } catch (error) {
