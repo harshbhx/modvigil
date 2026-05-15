@@ -20,14 +20,22 @@ Thumbs.db
 # AI and Gemini CLI files
 GEMINI.md
 gemini.md
-docs/Ai_prompts.md
-docs/CURRENT_STATE.md
-.gemini/
 MEMORY.md
+claude.md
+CLAUDE.md
+*.ai.md
+skills-lock.json
+.gemini/
+.agents/
+.claude/
 .anthropic/
 .cursor/
 ai_notes/
-*.ai.md
+docs/Ai_prompts.md
+docs/CURRENT_STATE.md
+docs/AUDIT_REPORT.md
+docs/AI_CONTEXT_MASTER.md
+docs/REVIEW_REPORT.md
 
 # Editors
 .vscode/
