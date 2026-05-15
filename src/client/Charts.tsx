@@ -29,6 +29,11 @@ export const BarChart: React.FC<BarChartProps> = ({ data, title, color = '#FF450
     <div className="chart-container" style={{ marginBottom: '20px' }}>
       <h3 style={{ margin: '0 0 10px 0', fontSize: '16px', color: '#878A8C' }}>{title}</h3>
       <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} style={{ background: '#FFFFFF', borderRadius: '8px', border: '1px solid #EDEFF1' }}>
+        <style>{`
+          .bar { transition: fill 0.2s, opacity 0.2s; cursor: pointer; }
+          .bar:hover { fill: #FF581A; opacity: 0.8; }
+        `}</style>
+        
         {/* Y-axis grid lines */}
         {[0, 0.25, 0.5, 0.75, 1].map((p, i) => {
           const y = padding + chartHeight * (1 - p);
@@ -52,13 +57,16 @@ export const BarChart: React.FC<BarChartProps> = ({ data, title, color = '#FF450
           return (
             <g key={i}>
               <rect
+                className="bar"
                 x={x}
                 y={y}
                 width={w}
                 height={barHeight}
                 fill={color}
                 rx="2"
-              />
+              >
+                <title>{`${d.label}: ${d.value} actions`}</title>
+              </rect>
               <text
                 x={x + w / 2}
                 y={height - padding + 15}

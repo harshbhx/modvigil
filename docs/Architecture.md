@@ -160,41 +160,39 @@ scheduledJobs:
 
 ## src/server/pipeline.ts (Data Capture Logic)
 
-```typescript
-// Triggered by: every ModAction event in the subreddit
-// Steps:
-// 1. Extract: action type, mod username, timestamp, target ID
-// 2. Store in Redis time-bucket: actions:{date}:{hour}
-// 3. Increment mod's daily action counter: mod:activity:{username}:{date}
-// 4. Update mod's last active timestamp: mod:lastactive:{username}
-// 5. Update daily totals hash: actions:total:{date}
-// 6. If action is removePost or removeComment:
-//    a. Increment user's warning counter: warn:count:{subId}:{userId}
-//    b. Check if threshold crossed (2 or 3 removals)
-//    c. If threshold crossed → call warnings.ts
-```
+Triggered by every `ModAction` event in the subreddit.
+1.  **Extract:** action type, mod username, timestamp, target ID.
+2.  **Store:** In Redis time-bucket `actions:{date}:{hour}` using `zAdd`.
+3.  **Track:** Increment mod's daily action counter and update global mod leaderboard.
+4.  **Ghost Detection:** Update `mod:lastactive:{username}` and add to `mod:all` set.
+5.  **Auto-Onboarding:** If `action === 'addmoderator'`, send a welcome Kit modmail with rules and dashboard links.
+6.  **User Warnings:** If removal:
+    a. Increment user's violation counter (30-day sliding window).
+    b. If count is 2 or 3 → Trigger `warnings.ts` for progressive discipline.
+    c. If count >= 4 → Flag user in Redis for dashboard review.
 
 ---
 
 ## src/server/alerts.ts (Spike Detection Logic)
 
-```typescript
-// Runs every 15 minutes via scheduler
-// Steps:
-// 1. Get current hour's removal count from Redis
-// 2. Get baseline for this day-of-week + hour from Redis
-// 3. If baseline is 0 (not enough data yet) → skip
-// 4. Calculate ratio: current / baseline
-// 5. Get alert threshold from subreddit settings (default: 3.0)
-// 6. If ratio >= threshold:
-//    a. Check cooldown: spike:lastfired — if < 2 hours ago, skip
-//    b. Send modmail to subreddit with spike details
-//    c. Update spike:lastfired timestamp
-// 7. Baseline updater (separate hourly job):
-//    a. Read last 7 same-weekday-hours from Redis
-//    b. Calculate average
-//    c. Write to spike:baseline:{dayOfWeek}:{hour}
-```
+Runs every 15 minutes via scheduler.
+1.  **Baseline Fetch:** Get rolling average for this specific day-of-week and hour.
+2.  **Current Check:** Get current hour's activity count.
+3.  **Threshold Logic:** If `current >= baseline * threshold` (and current > 5):
+    a. Check 2-hour cooldown.
+    b. Fire emergency modmail to mod team.
+4.  **Baseline Updater:** Separate hourly job calculates averages from the last 7 weeks.
+
+---
+
+## src/server/redis.ts (Advanced Persistence)
+
+All Redis interactions are centralized here for type safety and performance.
+-   **Time-Series:** Optimized `zAdd` for action logging.
+-   **Set Logic:** `sAdd/sMembers` for moderator tracking.
+-   **Leaderboards:** `zIncrBy/zRange` for high-performance rankings.
+-   **Ghost Detection:** Logic to cross-reference `mod:all` with `mod:lastactive` timestamps.
+-   **Health Algorithm:** Computes 0-100 score based on 7-day coverage and activity volume.
 
 ---
 

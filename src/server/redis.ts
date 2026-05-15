@@ -42,6 +42,9 @@ export class ModVigilRedis {
 
       // 4. Update global mod leaderboard
       await this.redis.zIncrBy('mod:leaderboard', actionData.moderator.name, 1);
+
+      // 5. Track moderator in set for ghost detection
+      await this.redis.sAdd('mod:all', actionData.moderator.name);
     }
   }
 
@@ -104,5 +107,79 @@ export class ModVigilRedis {
       username: item.member,
       count: item.score
     }));
+  }
+
+  /**
+   * Identifies moderators who haven't taken an action in 30 days.
+   */
+  async getGhostMods(): Promise<{ username: string; lastActiveDays: number }[]> {
+    const allMods = await this.redis.sMembers('mod:all');
+    const now = Date.now();
+    const ghostMods: { username: string; lastActiveDays: number }[] = [];
+
+    for (const mod of allMods) {
+      const lastActiveStr = await this.redis.get(`mod:lastactive:${mod}`);
+      if (lastActiveStr) {
+        const lastActive = parseInt(lastActiveStr);
+        const diffDays = Math.floor((now - lastActive) / (1000 * 60 * 60 * 24));
+        if (diffDays >= 30) {
+          ghostMods.push({ username: mod, lastActiveDays: diffDays });
+        }
+      }
+    }
+
+    return ghostMods.sort((a, b) => b.lastActiveDays - a.lastActiveDays);
+  }
+
+  /**
+   * Calculates the approval rate for a given date.
+   */
+  async getApprovalRate(dateStr: string): Promise<number> {
+    const totalKey = `actions:total:${dateStr}`;
+    const approvalKey = `actions:approvals:${dateStr}`;
+    
+    const totals = await this.getDailyTotals(dateStr);
+    const approvalData = await this.redis.hGet(approvalKey, 'count');
+    
+    const totalActions = Object.values(totals).reduce((sum, v) => sum + (parseInt(v) || 0), 0);
+    const approvals = parseInt(approvalData || '0');
+    
+    if (totalActions === 0) return 100; // Default to 100 if no actions
+    return (approvals / totalActions) * 100;
+  }
+
+  /**
+   * Fetches the top removal reasons for a given date.
+   */
+  async getTopRemovalReasons(dateStr: string): Promise<{ reason: string; count: number }[]> {
+    const reasonsKey = `actions:reasons:${dateStr}`;
+    const reasons = await this.redis.hGetAll(reasonsKey);
+    
+    return Object.entries(reasons)
+      .map(([reason, count]) => ({ reason, count: parseInt(count) }))
+      .sort((a, b) => b.count - a.count);
+  }
+
+  /**
+   * Calculates a community health score (0-100).
+   */
+  async getHealthScore(): Promise<number> {
+    const heatmap = await this.getHeatmapData();
+    let hoursWithActivity = 0;
+    
+    heatmap.forEach(day => {
+      day.forEach(hourCount => {
+        if (hourCount > 0) hoursWithActivity++;
+      });
+    });
+
+    const coverageScore = (hoursWithActivity / 168) * 100;
+    
+    // Activity score (based on last 7 days total volume compared to a "healthy" baseline)
+    const totals = await this.getLast7DaysTotals();
+    const totalVolume = totals.reduce((sum, d) => sum + d.value, 0);
+    const volumeScore = Math.min(100, (totalVolume / 50) * 100); // Assume 50 actions/week is "active"
+
+    return Math.round((coverageScore * 0.7) + (volumeScore * 0.3));
   }
 }

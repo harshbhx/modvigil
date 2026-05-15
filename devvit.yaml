@@ -31,3 +31,8 @@ settings:
     type: boolean
     defaultValue: false
     scope: installation
+  - name: enableWarnings
+    label: Enable Automated User Warnings
+    type: boolean
+    defaultValue: true
+    scope: installation

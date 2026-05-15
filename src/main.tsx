@@ -104,10 +104,12 @@ Devvit.addWebViewMessageHandler({
       if (message.type === 'GET_DASHBOARD_DATA') {
         const db = new ModVigilRedis(context.redis);
         
-        const [dailyTotals, heatmapData, leaderboard] = await Promise.all([
+        const [dailyTotals, heatmapData, leaderboard, healthScore, ghostMods] = await Promise.all([
           db.getLast7DaysTotals(),
           db.getHeatmapData(),
-          db.getLeaderboard()
+          db.getLeaderboard(),
+          db.getHealthScore(),
+          db.getGhostMods()
         ]);
 
         context.ui.webView.postMessage('index.html', {
@@ -116,7 +118,8 @@ Devvit.addWebViewMessageHandler({
             dailyTotals,
             heatmapData,
             leaderboard,
-            healthScore: 88, // Placeholder for now
+            healthScore,
+            ghostMods,
           }
         });
       }

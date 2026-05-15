@@ -8,10 +8,10 @@
 - **Triggers:** `onModAction` is successfully capturing subreddit moderator actions.
 - **Persistence:** Redis integration is live using Sorted Sets (`zAdd`) for time-series logging.
 - **Pipeline:** Logic in `pipeline.ts` correctly maps events to Redis hashes and sets.
-- **Verification:** End-to-end mod action capture verified in `r/mod_vigil_dev`.
-- **Project Audit:** Performed full audit of codebase; identified missing files and prompt divergences.
-- **Hardening:** Wrapped all triggers and jobs in `try/catch` blocks for production stability.
-- **Leaderboard:** Implemented real-time `zIncrBy` tracking for the moderator leaderboard.
+- **Project Audit:** Performed a deep-dive line-by-line audit of the entire codebase.
+- **Logic Remediation:** Replaced all dummy/placeholder logic in `digest.ts` and `main.tsx` with real data-driven calculations.
+- **Hardening:** Wrapped all triggers and jobs in `try/catch` blocks and synchronized configuration settings.
+- **New Metrics:** Implemented real-time approval rate tracking, removal reason analysis, and a coverage-based health score algorithm.
 
 ### 🚧 blockers Resolved
 - Fixed `lPush` is not a function (switched to `zAdd`).

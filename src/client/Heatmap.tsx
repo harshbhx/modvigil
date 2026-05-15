@@ -66,6 +66,23 @@ export const Heatmap: React.FC<HeatmapProps> = ({ data, title }) => {
             ))}
           </g>
         ))}
+
+        {/* Legend */}
+        <g transform={`translate(${paddingLeft}, ${height - 15})`}>
+          <text x="-5" y="10" fontSize="8" fill="#878A8C" textAnchor="end">Low</text>
+          {[0, 0.25, 0.5, 0.75, 1].map((p, i) => (
+            <rect
+              key={i}
+              x={i * 20}
+              y={0}
+              width={18}
+              height={10}
+              fill={getColor(maxValue * p)}
+              rx="1"
+            />
+          ))}
+          <text x={5 * 20} y={10} fontSize="8" fill="#878A8C">High</text>
+        </g>
       </svg>
     </div>
   );
