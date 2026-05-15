@@ -39,6 +39,12 @@ export async function updateBaseline(event: any, context: any): Promise<void> {
     console.log(`✅ [ModVigil Alerts] Baseline set to ${average.toFixed(2)}`);
   } catch (error) {
     console.error('❌ [ModVigil Alerts] Error updating baseline:', error);
+  } finally {
+    // CRITICAL: Reschedule job
+    await context.scheduler.runJob({
+      name: 'baselineUpdater',
+      runAt: new Date(Date.now() + 60 * 60 * 1000), // 1 hour
+    });
   }
 }
 
@@ -74,7 +80,7 @@ export async function checkForSpike(event: any, context: any): Promise<void> {
     if (baseline > 0 && currentCount >= 5 && currentCount >= (baseline * threshold)) {
       
       // 4. Check cooldown
-      const lastFiredKey = `spike:lastfired:${context.subredditId}`;
+      const lastFiredKey = `spike:lastfired:${subredditId}`;
       const lastFiredStr = await context.redis.get(lastFiredKey);
       const lastFired = lastFiredStr ? parseInt(lastFiredStr) : 0;
       const cooldownMs = 2 * 60 * 60 * 1000; // 2 hours
@@ -102,9 +108,17 @@ This could indicate a raid, a highly controversial post, or an influx of rule-br
         // Note: Real dashboard URL would be the permalink to the dashboard post
       });
 
-      await context.redis.set(lastFiredKey, Date.now().toString());
+      await context.redis.set(lastFiredKey, Date.now().toString(), {
+        expiration: new Date(Date.now() + 2 * 60 * 60 * 1000) // 2 hours
+      });
     }
   } catch (error) {
     console.error('❌ [ModVigil Alerts] Error checking for spike:', error);
+  } finally {
+    // CRITICAL: Reschedule job
+    await context.scheduler.runJob({
+      name: 'spikeChecker',
+      runAt: new Date(Date.now() + 15 * 60 * 1000), // 15 minutes
+    });
   }
 }

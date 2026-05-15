@@ -87,8 +87,24 @@ export async function generateWeeklyDigest(event: any, context: any): Promise<vo
     }
 
     console.log('✅ [ModVigil Digest] Digest posted successfully.');
-    
+
   } catch (error) {
     console.error('❌ [ModVigil Digest] Error generating weekly digest:', error);
+  } finally {
+    // CRITICAL: Reschedule job
+    await context.scheduler.runJob({
+      name: 'weeklyDigest',
+      runAt: getNextMonday9amUTC(),
+    });
   }
+}
+
+function getNextMonday9amUTC(): Date {
+  const now = new Date();
+  const day = now.getUTCDay();
+  const daysUntilMonday = day === 1 ? 7 : (8 - day) % 7;
+  const next = new Date(now);
+  next.setUTCDate(now.getUTCDate() + daysUntilMonday);
+  next.setUTCHours(9, 0, 0, 0);
+  return next;
 }

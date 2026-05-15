@@ -48,7 +48,7 @@ export async function handleModAction(event: ModAction, context: TriggerContext)
 
     // --- USER WARNING LOGIC ---
     // If the action is a removal, track it for the target user
-    const removalActions = ['removepost', 'removecomment', 'spamlink', 'spamcomment', 'removelink'];
+    const removalActions = ['removelink', 'removecomment', 'spamlink', 'spamcomment'];
     const isRemoval = removalActions.includes(action.toLowerCase());
 
     if (isRemoval) {
@@ -78,7 +78,7 @@ export async function handleModAction(event: ModAction, context: TriggerContext)
     }
     
     // Track Approval Rate logic
-    const approvalActions = ['approvepost', 'approvecomment', 'approvelink'];
+    const approvalActions = ['approvelink', 'approvecomment'];
     if (approvalActions.includes(action.toLowerCase())) {
       await context.redis.hIncrBy(`${subredditId}:actions:approvals:${dateStr}`, 'count', 1);
       await context.redis.expire(`${subredditId}:actions:approvals:${dateStr}`, 60 * 60 * 24 * 90);

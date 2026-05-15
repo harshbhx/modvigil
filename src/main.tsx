@@ -11,6 +11,17 @@ Devvit.configure({
   redditAPI: true,
 });
 
+// Helper function for weekly digest scheduling
+function getNextMonday9amUTC(): Date {
+  const now = new Date();
+  const day = now.getUTCDay();
+  const daysUntilMonday = day === 1 ? 7 : (8 - day) % 7;
+  const next = new Date(now);
+  next.setUTCDate(now.getUTCDate() + daysUntilMonday);
+  next.setUTCHours(9, 0, 0, 0);
+  return next;
+}
+
 // 1. Triggers
 Devvit.addTrigger({
   event: 'ModAction',
@@ -28,17 +39,17 @@ Devvit.addTrigger({
       // Schedule background jobs
       await context.scheduler.runJob({
         name: 'spikeChecker',
-        cron: '*/15 * * * *',
+        runAt: new Date(Date.now() + 60_000), // First run in 1 minute
       });
-      
+
       await context.scheduler.runJob({
         name: 'baselineUpdater',
-        cron: '0 * * * *',
+        runAt: new Date(Date.now() + 5 * 60_000), // First run in 5 minutes
       });
 
       await context.scheduler.runJob({
         name: 'weeklyDigest',
-        cron: '0 9 * * 1',
+        runAt: getNextMonday9amUTC(),
       });
     } catch (error) {
       console.error('❌ [ModVigil] Error in AppInstall trigger:', error);
@@ -74,35 +85,75 @@ Devvit.addSchedulerJob({
   onRun: generateWeeklyDigest,
 });
 
-// 3. Menu Items
-Devvit.addMenuItem({
-  location: 'subreddit',
-  label: '📊 Open ModVigil Dashboard',
-  onPress: async (_event, context) => {
-    context.ui.showToast('Opening ModVigil Dashboard...');
-    context.ui.navigateTo('https://reddit.com');
-  },
-});
-
-// 4. Custom Post Type
+// 3. Custom Post Type with Webview
 Devvit.addCustomPostType({
   name: 'ModVigil Dashboard',
   render: (context) => {
     return (
-      <vstack height="100%" width="100%" alignment="center middle" padding="medium">
-        <text size="large" weight="bold">🛡️ ModVigil</text>
-        <spacer size="small" />
-        <text>Real-time moderation analytics and automation.</text>
-        <spacer size="medium" />
-        <button
-          onPress={() => {
-            context.ui.showToast('Dashboard feature coming soon!');
+      <vstack height="100%" width="100%">
+        <webview
+          id="modvigil-webview"
+          url="index.html"
+          onMessage={async (msg: any) => {
+            if (msg.type === 'GET_DASHBOARD_DATA') {
+              try {
+                const subreddit = await context.reddit.getCurrentSubreddit();
+                const subredditId = subreddit.id;
+                const db = new ModVigilRedis(context.redis, subredditId);
+
+                const [dailyTotals, heatmapData, leaderboard, healthScore] = await Promise.all([
+                  db.getLast7DaysTotals(),
+                  db.getHeatmapData(),
+                  db.getLeaderboard(),
+                  db.getHealthScore(),
+                ]);
+
+                context.ui.webView.postMessage('modvigil-webview', {
+                  type: 'DASHBOARD_DATA',
+                  payload: {
+                    dailyTotals,
+                    heatmapData,
+                    leaderboard,
+                    healthScore,
+                    ghostMods: [],
+                    lastActionAt: 0,
+                    totalActionsToday: 0,
+                    approvalRate: 0,
+                    topRemovalReason: null,
+                  },
+                });
+              } catch (error) {
+                console.error('❌ [ModVigil] Error fetching dashboard data:', error);
+                context.ui.webView.postMessage('modvigil-webview', {
+                  type: 'ERROR',
+                  payload: { message: 'Failed to load dashboard data' },
+                });
+              }
+            }
           }}
-        >
-          Open Live Dashboard
-        </button>
+        />
       </vstack>
     );
+  },
+});
+
+// 4. Menu Items
+Devvit.addMenuItem({
+  location: 'subreddit',
+  label: '📊 Open ModVigil Dashboard',
+  onPress: async (_event, context) => {
+    const subreddit = await context.reddit.getCurrentSubreddit();
+    const post = await context.reddit.submitPost({
+      title: '📊 ModVigil Dashboard',
+      subredditName: subreddit.name,
+      preview: (
+        <vstack padding="medium" alignment="center middle">
+          <text size="xlarge">📊 ModVigil Dashboard</text>
+          <text size="medium" color="neutral-content-weak">Click to view analytics</text>
+        </vstack>
+      ),
+    });
+    context.ui.navigateTo(post);
   },
 });
 

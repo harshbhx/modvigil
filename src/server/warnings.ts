@@ -56,7 +56,9 @@ Please take this time to review the rules and ensure you are following them.`;
         text: message
       });
 
-      await context.redis.set(lastSentKey, Date.now().toString());
+      await context.redis.set(lastSentKey, Date.now().toString(), {
+        expiration: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
+      });
     }
     
   } catch (error) {
