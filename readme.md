@@ -1,149 +1,60 @@
-# 🛡️ ModVigil
+# ModVigil — Moderation Intelligence for Reddit
 
-> "The radar your community needs." — Real-time moderation analytics, automation, and anomaly detection for Reddit.
+Reddit's native mod log is a chronological text dump. No graphs. No alerts. No way to know your sub is being raided until the damage is done. ModVigil fixes that.
 
-[![Devvit](https://img.shields.io/badge/Built%20on-Devvit-FF4500?style=for-the-badge&logo=reddit)](https://developers.reddit.com)
-[![Hackathon](https://img.shields.io/badge/Reddit%20Mod%20Tools%20Hackathon-2026-FF4500?style=for-the-badge)](https://mod-tools-migration.devpost.com)
-[![TypeScript](https://img.shields.io/badge/TypeScript-Strict-3178C6?style=for-the-badge&logo=typescript)](https://www.typescriptlang.org)
-[![Beast Mode](https://img.shields.io/badge/Status-Beast%20Mode-red?style=for-the-badge)](https://github.com/harshubhanushali07/modvigil)
+It turns raw mod actions into a real-time intelligence dashboard — spike alerts, coverage heatmaps, automated warnings, and predictive raid detection — all running natively on Reddit's infrastructure with zero external dependencies.
 
 ---
 
-## 📽️ The Pitch (Winner Level)
+## What It Does
 
-Moderators are flying blind. Reddit's native mod log is a chronological text dump. There are no graphs, no heatmaps, no alerts, and no way to see if your sub is being raided until the damage is done.
+**Anomaly Detection**
+- Spike alerts: learns your subreddit's normal activity per hour/day, fires emergency modmail to the full team when volume hits 3× baseline
+- Raid Prediction: velocity-based 0–100 risk score that predicts coordinated attacks before they peak
 
-**ModVigil** provides real-time situational awareness and automated safety nets. It turns raw logs into **Intelligence**. Built from the ground up to be the **World-Class** standard for Reddit moderation.
+**Automated Discipline**
+- Progressive user warnings: 2 removals → friendly PM, 3 → final warning, 4+ → flagged for manual review
+- Auto-Flag Suspicious Users: detects high-removal patterns automatically and surfaces them in the dashboard
 
----
+**Team Intelligence**
+- Ghost Mod Detection: identifies moderators inactive 30+ days, lets you nudge them with one click
+- New Mod Welcome PM: auto-onboards new moderators with a quick-start guide on install
+- Mod Performance Insights: per-mod approval rate vs team average, post/comment specialization, days active
 
-## ✨ Features (100% Implemented)
+**Dashboard**
+- 7×24 Coverage Heatmap: red cells = coverage gaps, orange scale = activity volume
+- Circular Health Score gauge: algorithmic 0–100 score (coverage + volume weighted)
+- 7-Day Activity Radar: SVG bar chart, no external libraries
+- Moderator Leaderboard with MVP badge
+- Quick Stats: total actions today, approval rate, top removal action
+- Actionable Recommendations: URGENT / IMPORTANT / SUGGESTED cards with specific next steps
+- AutoMod Rule Suggestions: pattern analysis → ready-to-paste AutoMod YAML
+- Trend Analysis: 30-day volume and approval rate trends with % change
+- Time Savings Calculator: shows hours saved per week and cumulative dollar value since install
+- Benchmarking: percentile rank vs all subreddits running ModVigil
 
-### 📊 Real-Time Intelligence Dashboard
-A secure, mod-only webview built natively on Devvit. No external servers.
-- **7-Day Activity Radar** — Visualize removals vs approvals vs bans at a glance.
-- **24×7 Heatmap** — Identify "dead zones" in your mod coverage instantly.
-- **Mod Leaderboard** — See who's carrying the load.
-- **🛡️ Community Health Score** — An algorithmic 0-100 score based on coverage, response volume, and consistency.
-
-### 🚨 Spike Alert System (Anomaly Detection)
-- **Baseline Analysis:** ModVigil learns your subreddit's "normal" activity for every hour of every day.
-- **Active Monitoring:** Every 15 minutes, it checks current removal rates against the baseline.
-- **Instant Response:** If activity hits **3× the baseline**, an emergency modmail is fired to the entire team.
-
-### 🤖 Progressive Discipline (Auto-Warnings)
-- **Automatic Tracking:** Removals are counted per user in Redis (30-day window).
-- **Escalation:**
-  - **2 Removals:** Sends a friendly educational modmail.
-  - **3 Removals:** Sends a formal final warning.
-  - **4+ Removals:** Flags the user in the dashboard for manual human review.
-- *Zero auto-banning. Humans always make the final call.*
-
-### 👻 Ghost Mod Detection
-- Automatically identifies moderators who haven't taken a single action in 30+ days.
-- Surfaces them in the dashboard to help head mods manage their teams.
-
-### 🎉 New Mod Auto-Onboarding
-- When a new moderator is added, ModVigil sends them a **Welcome Kit**.
-- Includes a quick-start guide and data-driven insights on the most common rules broken in that sub.
-
-### 📬 Weekly Intelligence Digest
-- Every Monday at 9am UTC, ModVigil generates a comprehensive report of the previous week.
-- Comparisons: Week-over-week % change in activity.
-- **Transparency Mode:** Toggle in settings to post the digest publicly for community trust.
+**Reporting**
+- Weekly Digest: every Monday 9am UTC, week-over-week comparison with emoji table
+- Transparency Mode: toggle to post digest publicly for community trust
 
 ---
 
-## 🏗️ Technical Achievement
+## Technical
 
-### Pure Reddit Native (Zero Latency, Zero Cost)
-ModVigil is a masterpiece of "Lean Engineering." It uses **zero external APIs**, zero external hosting, and zero external databases. 
-- **Database:** Optimized Redis Sorted Sets (`zAdd`) for high-frequency time-series data.
-- **Visualization:** Pure React + SVG. Custom-engineered charts ensure 100% compatibility with Reddit's sandbox.
-- **Zero Config:** Install and it starts working immediately.
-
----
-
-## 📂 Project Structure
-
-```
-mod-vigil/
-├── devvit.yaml              # App config, permissions, settings, triggers
-├── package.json             # v1.0.0
-├── src/
-│   ├── main.tsx             # Entry point — registers all triggers, jobs & UI
-│   ├── server/
-│   │   ├── redis.ts         # SINGLE SOURCE OF TRUTH: All Redis persistence logic
-│   │   ├── pipeline.ts      # ModAction event processing + user tracking
-│   │   ├── alerts.ts        # Spike detection & baseline calculation
-│   │   ├── warnings.ts      # Progressive discipline messaging
-│   │   └── digest.ts        # Weekly report generation
-│   └── client/
-│       ├── App.tsx           # Dashboard shell (React)
-│       ├── Charts.tsx        # High-performance SVG Bar Charts
-│       ├── Heatmap.tsx       # 7x24 Coverage Grid
-│       ├── Leaderboard.tsx   # Mod ranking + Ghost detector
-│       └── HealthScore.tsx   # Circular Health Gauge
-```
+- Zero external dependencies — runs entirely on Reddit's infrastructure (Redis, scheduler, triggers, webview)
+- Devvit-native: ModAction triggers, self-rescheduling scheduler jobs, Redis sorted sets for time-series data
+- Pure SVG/React for all visualizations — no Chart.js, no D3, no CDN imports
+- Multi-tenant safe: all Redis keys namespaced by subredditId
+- Strict TypeScript, zero build errors
 
 ---
 
-## 🔥 BEAST MODE: THE FUTURE VISION
+## Install
 
-*Beyond the hackathon: Transforming ModVigil into the definitive Reddit OS.*
-
----
-
-## ✅ Quality Audit & Beast Mode Hardening (May 15, 2026)
-
-To ensure **absolute stability** for the hackathon judging phase, a deep technical audit was performed on May 15, 2026.
-
-### 🔍 Issues Found & Remediated
-- **[HARDENED] TypeScript Build Safety**: Resolved `ModAction` property mismatches for Devvit SDK v0.12.23.
-- **[OPTIMIZED] Redis Latency**: Fixed a "Heatmap N+1" bottleneck; reduced 168 sequential calls to efficient batched retrieval.
-- **[RELIABILITY] Scheduler Resiliency**: Implemented the "Self-Reschedule" pattern for all background jobs, preventing silent failures during subreddit events.
-- **[ARCHITECTURE] Namespace Strictness**: Standardized all Redis keys to a strict `namespace:qualifier:{variable}` pattern for 100% collision safety.
-- **[CLEANUP] Visibility Audit**: Refined `.gitignore` to ensure internal AI metadata remains private while maintaining essential documentation visibility.
-
----
-
-1.  **🧠 Pre-Cognitive Alerts:** Use ML to analyze title sentiment and predict a controversy *before* it breaks the 3x baseline.
-2.  **🛡️ Network Shield:** Share "Raid Signatures" across subreddits running ModVigil to stop coordinated attacks before they move from Sub A to Sub B.
-3.  **⚡ Live Stream:** WebSocket-style zero-latency dashboard updates for subreddits with 10k+ actions per hour.
-4.  **📈 Recruitment AI:** Identify power users active during "Dead Zone" hours and suggest them for mod recruitment automatically.
-
----
-
-## 🛠️ Installation & Development
-
-### Prerequisites
-- [Node.js 22](https://nodejs.org/)
-- [Devvit CLI](https://developers.reddit.com/docs/cli)
-
-### Setup
 ```bash
-git clone https://github.com/harshubhanushali07/modvigil
-cd modvigil
 npm install
 devvit login
 devvit playtest r/your_subreddit
 ```
 
----
-
-## 🏆 Hackathon Submission
-
-This project was built for the **Reddit Mod Tools and Migrated Apps Hackathon (2026)**.
-
-### Why ModVigil?
-- **Utility:** Solves a core moderator pain point (visibility).
-- **Execution:** 100% complete, tested, and feature-rich.
-- **Innovation:** Brings professional-grade "Datadog-style" monitoring to Reddit's mod tools.
-
-**Final Milestone Target:** May 28, 2026.
-
----
-
-## 📜 License
-
-BSD-3-Clause
+Built for the **Reddit Mod Tools and Migrated Apps Hackathon 2026**.
