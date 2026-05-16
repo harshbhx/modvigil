@@ -244,9 +244,11 @@ export class ModVigilRedis {
    * Identifies moderators who haven't taken an action in 30 days.
    * FIX #14: Accepts optional reddit context to filter out ex-mods (removed from team).
    * FIX #28: mod:all has no TTL so this registry is always available.
+   * AUDIT FIX: listing.all() throws ServerCallRequired inside the webview
+   * onMessage handler in Devvit 0.12.23. Stream the iterator instead.
    */
   async getGhostMods(
-    reddit?: { getModerators: (opts: { subredditName: string }) => Promise<{ all: () => Promise<Array<{ username: string }>> }> },
+    reddit?: { getModerators: (opts: { subredditName: string }) => AsyncIterable<{ username: string }> },
     subredditName?: string
   ): Promise<{ username: string; lastActiveDays: number }[]> {
     try {
@@ -257,9 +259,10 @@ export class ModVigilRedis {
       let activeMods = new Set(allMods);
       if (reddit && subredditName) {
         try {
-          const listing = await reddit.getModerators({ subredditName });
-          const live = await listing.all();
-          activeMods = new Set(live.map((u) => u.username));
+          const listing = reddit.getModerators({ subredditName });
+          const live: string[] = [];
+          for await (const u of listing) live.push(u.username);
+          activeMods = new Set(live);
         } catch (e) {
           console.error('[Redis:getGhostMods] Could not fetch live mod list, using cached set:', e);
         }
