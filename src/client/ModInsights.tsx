@@ -64,8 +64,10 @@ export const ModInsights: React.FC<ModInsightsProps> = ({ mods, teamApprovalRate
           const specialization = describeSpecialization(m);
           const widthPct = (m.total / maxTotal) * 100;
           const approvalDelta = m.approvalRate - teamApprovalRate;
+          // FIX 10: don't show delta badge when teamApprovalRate is 0 (misleading on cold install)
+          const showDelta = teamApprovalRate > 0 && Math.abs(approvalDelta) >= 5;
           const approvalColor =
-            Math.abs(approvalDelta) < 5
+            !showDelta
               ? 'var(--color-neutral-content-weak)'
               : approvalDelta >= 0
                 ? 'var(--color-success)'
@@ -130,7 +132,7 @@ export const ModInsights: React.FC<ModInsightsProps> = ({ mods, teamApprovalRate
               <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', fontSize: '11px', color: 'var(--color-neutral-content-weak)' }}>
                 <span>
                   Approval: <strong style={{ color: approvalColor }}>{m.approvalRate.toFixed(0)}%</strong>
-                  {Math.abs(approvalDelta) >= 5 && (
+                  {showDelta && (
                     <span style={{ color: approvalColor }}> ({approvalDelta > 0 ? '+' : ''}{approvalDelta.toFixed(0)}pp)</span>
                   )}
                 </span>

@@ -21,12 +21,12 @@ const MOCK_MODERATORS: MockModerator[] = [
   { name: 'NightWatch', activityLevel: 0.7, preferredHours: [0, 1, 2, 22, 23] },
   { name: 'WeekendWarrior', activityLevel: 0.5, preferredHours: [12, 13, 14, 15, 16, 17] },
   { name: 'CasualMod', activityLevel: 0.3, preferredHours: [10, 11, 18, 19] },
-  { name: 'GhostMod_Inactive', activityLevel: 0.0, preferredHours: [] },
+  { name: 'former_mod_2024', activityLevel: 0.0, preferredHours: [] },
 ];
 
 const ACTION_TYPES = [
-  { type: 'removelink', weight: 40 },
-  { type: 'approvelink', weight: 30 },
+  { type: 'removelink', weight: 25 },
+  { type: 'approvelink', weight: 50 },
   { type: 'removecomment', weight: 20 },
   { type: 'approvecomment', weight: 5 },
   { type: 'spamlink', weight: 3 },
@@ -113,8 +113,8 @@ export async function populateDemoData(redis: ModVigilRedis, _subredditId: strin
 
     // FIX #25: Use public helpers instead of redis['redis'] bracket access
     const ghostTimestamp = Date.now() - 45 * 24 * 60 * 60 * 1000;
-    await redis.setLastActive('GhostMod_Inactive', ghostTimestamp);
-    await redis.addMod('GhostMod_Inactive');
+    await redis.setLastActive('former_mod_2024', ghostTimestamp);
+    await redis.addMod('former_mod_2024');
 
     const totalActions = actionsGenerated.reduce((sum, n) => sum + n, 0);
 
@@ -126,6 +126,9 @@ export async function populateDemoData(redis: ModVigilRedis, _subredditId: strin
     // ── Phase 2: Seed stats counters so TimeSavings shows realistic savings ──
     await seedDemoStats(redis, _subredditId);
 
+    // ── FIX 1: Seed install date (30 days ago) so weekly rate is realistic ──
+    await redis.seedInstallDate();
+
     // ── Benchmarking: Seed fake peer subreddits so percentile bars render ──
     await seedBenchmarkData(redis);
 
@@ -136,7 +139,7 @@ export async function populateDemoData(redis: ModVigilRedis, _subredditId: strin
 
     console.log(`🎉 [ModVigil Demo] Demo data complete! Total actions: ${totalActions}`);
     console.log(`📊 [ModVigil Demo] Breakdown: ${actionsGenerated.join(', ')}`);
-    console.log(`👻 [ModVigil Demo] Ghost mod added: GhostMod_Inactive (inactive 45 days)`);
+    console.log(`👻 [ModVigil Demo] Ghost mod added: former_mod_2024 (inactive 45 days)`);
 
   } catch (error) {
     console.error('❌ [ModVigil Demo] Error populating demo data:', error);
@@ -150,7 +153,7 @@ export async function populateDemoData(redis: ModVigilRedis, _subredditId: strin
  * judges see a realistic upward trend.
  */
 async function seedPriorPeriod(redis: ModVigilRedis, _subredditId: string, currentTotal: number): Promise<void> {
-  const targetTotal = Math.max(50, Math.floor(currentTotal * 0.75));
+  const targetTotal = Math.max(50, Math.floor(currentTotal * 0.60));
   const perDay = Math.max(5, Math.floor(targetTotal / 7));
   const now = new Date();
 
@@ -219,27 +222,42 @@ async function seedRecentActions(redis: ModVigilRedis): Promise<void> {
   const todayStr = new Date().toISOString().slice(0, 10);
   const hourStr = String(new Date().getUTCHours()).padStart(2, '0');
 
-  // 14 actions spread over the last 12 minutes (~one every 50 seconds).
-  // 14 actions in 15 min triggers the absolute-volume signal (+5 pts) and,
-  // combined with prev15min=0, the "sudden burst" signal (+15 pts) → score ≥ 20
-  // which lands in ELEVATED territory.
+  // FIX: 22 actions within last 4 minutes (one every 10s) → absolute volume ≥15 (+15pts)
+  // + 3 actions 15-18 min ago → acceleration 22/3 = 7x (+30pts) → score ≥ 60 (ALERT badge)
   const ops: Promise<void>[] = [];
-  for (let i = 0; i < 14; i++) {
-    const actionSec = nowSec - i * 50; // spread backwards ~50 s apart
+  for (let i = 0; i < 22; i++) {
+    const actionSec = nowSec - (i * 10); // one action every 10 seconds, all within last ~4 min
     const actionData: ActionRecord = {
       action: i % 3 === 0 ? 'removelink' : i % 3 === 1 ? 'approvelink' : 'removecomment',
       moderator: { name: 'ModChampion' },
       targetUser: `demo_user_${i}`,
       targetPost: `t3_demo_recent_${i}`,
-      timestamp: actionSec * 1000, // recordAction expects ms
+      timestamp: actionSec * 1000,
     };
-    // Only seed if the action still falls within the current hour bucket
     const actionHour = new Date(actionSec * 1000).getUTCHours();
     const actionDate = new Date(actionSec * 1000).toISOString().slice(0, 10);
     if (actionDate === todayStr && String(actionHour).padStart(2, '0') === hourStr) {
       ops.push(redis.recordAction(actionData));
     }
   }
+
+  // 3 actions 15-18 min ago so the acceleration signal fires (prev15min > 0)
+  for (let i = 0; i < 3; i++) {
+    const actionSec = nowSec - 900 - (i * 60); // 15-18 min ago
+    const actionData: ActionRecord = {
+      action: 'removelink',
+      moderator: { name: 'ModChampion' },
+      targetUser: `demo_prev_user_${i}`,
+      targetPost: `t3_demo_prev_${i}`,
+      timestamp: actionSec * 1000,
+    };
+    const actionHour = new Date(actionSec * 1000).getUTCHours();
+    const actionDate = new Date(actionSec * 1000).toISOString().slice(0, 10);
+    if (actionDate === todayStr && String(actionHour).padStart(2, '0') === hourStr) {
+      ops.push(redis.recordAction(actionData));
+    }
+  }
+
   await Promise.all(ops);
-  console.log('✅ [ModVigil Demo] Seeded 14 recent actions for raid prediction widget');
+  console.log('✅ [ModVigil Demo] Seeded 22 recent + 3 prev actions for raid prediction widget');
 }

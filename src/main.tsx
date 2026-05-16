@@ -206,7 +206,7 @@ Devvit.addCustomPostType({
                 const db = new ModVigilRedis(context.redis, subredditId);
                 const dateStr = new Date().toISOString().split('T')[0];
 
-                const [dailyTotals, heatmapData, leaderboard, healthScore, approvalRate, topReasons, topReasons7d, ghostMods, spikeThreshold, transparencyMode, enableWarnings, stats, installDate, modInsights, trend, flaggedUsers, autoModSuggestions, raidRisk] = await Promise.all([
+                const [dailyTotals, heatmapData, leaderboard, healthScore, approvalRate, topReasons, topReasons7d, ghostMods, spikeThreshold, transparencyMode, enableWarnings, stats, installDate, modInsights, trend, flaggedUsers, autoModSuggestions, raidRisk, rawModCount] = await Promise.all([
                   db.getLast7DaysTotals(),
                   db.getHeatmapData(),
                   db.getLeaderboard7d(),
@@ -226,15 +226,17 @@ Devvit.addCustomPostType({
                   db.getFlaggedUsers(),
                   buildAutoModSuggestions(db),
                   calculateRaidRisk(db),
+                  // FIX 4: real mod count from mod:all — leaderboard is capped at 10
+                  db.getModCount(),
                 ]);
 
                 const todayTotals = await db.getDailyTotals(dateStr);
                 const totalActionsToday = Object.values(todayTotals).reduce((sum, v) => sum + (parseInt(v, 10) || 0), 0);
                 const topRemovalReason = topReasons.length > 0 ? topReasons[0].reason : null;
 
-                // FIX 3: derive mod count from already-fetched data — avoids a second
-                // full mod-listing stream that duplicates the one inside getGhostMods().
-                const modCount = Math.max(leaderboard.length + ghostMods.length, 1);
+                // FIX 4: use real mod count from mod:all — leaderboard is capped at 10,
+                // so large teams (25+ mods) would get wrong actions/mod recommendations.
+                const modCount = Math.max(rawModCount, leaderboard.length, 1);
 
                 const totalActions7d = dailyTotals.reduce((s, d) => s + d.value, 0);
                 const recommendations = await buildRecommendations(db, dateStr, {

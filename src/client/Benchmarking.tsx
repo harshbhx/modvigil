@@ -12,7 +12,7 @@ const PercentileBar: React.FC<{ label: string; pct: number; color: string }> = (
     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
       <span style={{ fontSize: '12px', color: 'var(--color-neutral-content)' }}>{label}</span>
       <span style={{ fontSize: '12px', fontWeight: 700, color }}>
-        Top {100 - pct}%
+        Top {Math.max(1, 100 - pct)}%
       </span>
     </div>
     <div style={{ height: '6px', background: 'var(--color-neutral-border)', borderRadius: '3px', overflow: 'hidden' }}>

@@ -18,6 +18,11 @@ interface RaidPredictionProps {
 export const RaidPrediction: React.FC<RaidPredictionProps> = ({ data }) => {
   const { score, level, signals, recommendation, last15min } = data;
 
+  // FIX 8: hide panel entirely when there's no meaningful data
+  if (score === 0 && (signals[0]?.includes('Insufficient') || signals[0]?.includes('Unable'))) {
+    return null;
+  }
+
   const getColor = () => {
     if (score >= 80) return '#ef4444';   // red
     if (score >= 60) return '#f97316';   // orange

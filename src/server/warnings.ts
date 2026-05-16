@@ -24,13 +24,15 @@ export async function handleUserWarning(
     // Sanitize userId for Redis key safety (defense-in-depth)
     const sanitizedUserId = sanitizeUsername(userId);
 
-    // 1. Check cooldown (one warning per 24 hours)
+    // FIX 3: atomic SET NX — eliminates the read-then-write race condition.
+    // Two concurrent triggers can both pass a get+check; SET NX is atomic so
+    // only one acquires the lock. Returns 'OK' if acquired, null if already set.
     const lastSentKey = `warn:lastsent:${context.subredditId}:${sanitizedUserId}`;
-    const lastSentStr = await context.redis.get(lastSentKey);
-    const lastSent = lastSentStr ? parseInt(lastSentStr) : 0;
-    const cooldownMs = 24 * 60 * 60 * 1000;
-
-    if (Date.now() - lastSent < cooldownMs) {
+    const acquired = await context.redis.set(lastSentKey, '1', {
+      nx: true,
+      expiration: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
+    });
+    if (!acquired) {
       console.log(`⏳ [ModVigil Warnings] User ${sanitizedUserId} already warned recently. Skipping.`);
       return;
     }
@@ -79,12 +81,7 @@ Please take this time to review the rules and ensure you are following them.`;
 
     if (subject && message) {
       console.log(`✉️ [ModVigil Warnings] Sending warning ${removalCount} to user ${sanitizedUserId}`);
-
-      // FIX: set cooldown BEFORE sending PM to prevent duplicate sends under
-      // concurrent triggers — both would pass the cooldown check if we set it after.
-      await context.redis.set(lastSentKey, Date.now().toString(), {
-        expiration: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
-      });
+      // SET NX above already set the cooldown key atomically — no second set needed.
 
       // Use original userId for Reddit API (expects original username)
       await context.reddit.sendPrivateMessage({

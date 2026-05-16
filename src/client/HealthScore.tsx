@@ -60,8 +60,13 @@ export const HealthScore: React.FC<HealthScoreProps> = ({ score }) => {
         {/* FIX 5a: ELITE threshold 90 (was 85), score=0 shows AWAITING DATA */}
         <div style={{ fontSize: '18px', fontWeight: '900', color }}>{score === 0 ? 'AWAITING DATA' : score >= 90 ? 'ELITE' : score >= 70 ? 'STABLE' : 'CRITICAL'}</div>
         <div style={{ fontSize: '11px', color: 'var(--color-neutral-content-weak)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-          <span style={{ color: score >= 70 ? 'var(--color-success)' : 'var(--color-primary)' }}>{score >= 70 ? '▲' : '▼'}</span> 
-          {score >= 70 ? 'Improving coverage' : 'Coverage gaps detected'}
+          {/* FIX 4: score=0 shows neutral subtitle, not misleading "Coverage gaps detected" */}
+          {score === 0
+            ? 'Awaiting first actions'
+            : score >= 70
+              ? <React.Fragment><span style={{ color: 'var(--color-success)' }}>▲</span> Improving coverage</React.Fragment>
+              : <React.Fragment><span style={{ color: 'var(--color-primary)' }}>▼</span> Coverage gaps detected</React.Fragment>
+          }
         </div>
       </div>
     </div>

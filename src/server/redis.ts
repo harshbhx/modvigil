@@ -168,7 +168,8 @@ export class ModVigilRedis {
         const dateStr = d.toISOString().split('T')[0];
         const heatmapKey = `${this.subredditId}:heatmap:${dateStr}`;
         promises.push(
-          this.redis.hGetAll(heatmapKey).then(data => ({ day: i, data }))
+          // FIX 1: null guard — hGetAll returns null when key doesn't exist
+          this.redis.hGetAll(heatmapKey).then(data => ({ day: i, data: data ?? {} }))
         );
       }
 
@@ -233,7 +234,8 @@ export class ModVigilRedis {
             )
           );
           const c = counts.reduce(
-            (s, h) => s + Object.values(h).reduce((x, v) => x + safeInt(v), 0),
+            // FIX 1: null guard — hGetAll returns null when key doesn't exist
+            (s, h) => s + Object.values(h ?? {}).reduce((x, v) => x + safeInt(v), 0),
             0
           );
           return { username: m, count: c };
@@ -388,7 +390,8 @@ export class ModVigilRedis {
         { reverse: true, by: 'rank' }
       );
       if (ranked.length === 0) return [];
-      const metaHash = await this.redis.hGetAll(`${this.subredditId}:warn:flagged_meta`);
+      // FIX 1: null guard — hGetAll returns null when key doesn't exist
+      const metaHash = (await this.redis.hGetAll(`${this.subredditId}:warn:flagged_meta`)) ?? {};
       const out: { username: string; removals: number; timestamp: number }[] = [];
       for (const item of ranked) {
         const raw = metaHash[item.member];
@@ -425,7 +428,8 @@ export class ModVigilRedis {
   async getTopRemovalReasons(dateStr: string): Promise<{ reason: string; count: number }[]> {
     try {
       const reasonsKey = `${this.subredditId}:actions:reasons:${dateStr}`;
-      const reasons = await this.redis.hGetAll(reasonsKey);
+      // FIX 1: null guard — hGetAll returns null when key doesn't exist
+      const reasons = (await this.redis.hGetAll(reasonsKey)) ?? {};
       return Object.entries(reasons)
         .map(([reason, count]) => ({ reason, count: safeInt(count) }))
         .sort((a, b) => b.count - a.count);
@@ -452,7 +456,8 @@ export class ModVigilRedis {
       );
       const merged: Record<string, number> = {};
       for (const h of hashes) {
-        for (const [reason, count] of Object.entries(h)) {
+        // FIX 1: null guard — hGetAll returns null when key doesn't exist
+        for (const [reason, count] of Object.entries(h ?? {})) {
           merged[reason] = (merged[reason] ?? 0) + safeInt(count);
         }
       }
@@ -644,13 +649,16 @@ export class ModVigilRedis {
         allMods.map(async (m) => {
           const u = this.sanitizeUsername(m);
           const dailyHashes = await Promise.all(
-            days.map(d => this.redis.hGetAll(`${this.subredditId}:mod:activity:${u}:${d}`))
+            // FIX 1: null guard — hGetAll returns null when key doesn't exist
+            days.map(d => this.redis.hGetAll(`${this.subredditId}:mod:activity:${u}:${d}`).then(h => h ?? {}))
           );
           let total = 0;
           let approvals = 0;
+          let removals = 0;
           let posts = 0;
           let comments = 0;
           let daysActive = 0;
+          const REMOVAL_ACTIONS_SET = new Set(['removelink', 'removecomment', 'spamlink', 'spamcomment', 'banuser']);
           for (const h of dailyHashes) {
             let dayTotal = 0;
             for (const [action, countStr] of Object.entries(h)) {
@@ -659,12 +667,16 @@ export class ModVigilRedis {
               total += c;
               const a = action.toLowerCase();
               if (a === 'approvelink' || a === 'approvecomment') approvals += c;
+              if (REMOVAL_ACTIONS_SET.has(a)) removals += c;
               if (a.endsWith('link')) posts += c;
               if (a.endsWith('comment')) comments += c;
             }
             if (dayTotal > 0) daysActive++;
           }
-          const approvalRate = total > 0 ? (approvals / total) * 100 : 0;
+          // FIX 5: use content decisions (approvals + removals) as denominator,
+          // not total actions — bans, locks, stickies etc. are not content decisions.
+          const contentDecisions = approvals + removals;
+          const approvalRate = contentDecisions > 0 ? Math.round((approvals / contentDecisions) * 100) : 0;
           return { username: m, total, approvalRate, posts, comments, daysActive };
         })
       );
@@ -709,19 +721,25 @@ export class ModVigilRedis {
 
       const compute = async (dates: string[]) => {
         const [totals, approvals] = await Promise.all([
-          Promise.all(dates.map(d => this.redis.hGetAll(`${this.subredditId}:actions:total:${d}`))),
+          Promise.all(dates.map(d => this.redis.hGetAll(`${this.subredditId}:actions:total:${d}`).then(h => h ?? {}))),
           Promise.all(dates.map(d => this.redis.hGet(`${this.subredditId}:actions:approvals:${d}`, 'count'))),
         ]);
         let volume = 0;
         let approvalCount = 0;
+        let removalCount = 0;
         let daysActive = 0;
+        const REMOVAL_ACTIONS = ['removelink', 'removecomment', 'spamlink', 'spamcomment', 'banuser'];
         totals.forEach(h => {
           const dayTotal = Object.values(h).reduce((s, v) => s + safeInt(v), 0);
           volume += dayTotal;
           if (dayTotal > 0) daysActive++;
+          // FIX 5: track removals separately for correct approval rate denominator
+          removalCount += REMOVAL_ACTIONS.reduce((s, a) => s + safeInt(h[a]), 0);
         });
         approvals.forEach(v => { approvalCount += safeInt(v); });
-        const approvalRate = volume > 0 ? (approvalCount / volume) * 100 : 0;
+        // FIX 5: denominator is content decisions only, not all action types
+        const contentDecisions = approvalCount + removalCount;
+        const approvalRate = contentDecisions > 0 ? (approvalCount / contentDecisions) * 100 : 0;
         return { volume, approvalRate, daysActive };
       };
 
@@ -755,6 +773,19 @@ export class ModVigilRedis {
         currentDaysActive: 0,
         previousDaysActive: 0,
       };
+    }
+  }
+
+  /**
+   * FIX 4: Returns the true mod count from mod:all sorted set.
+   * getLeaderboard() is capped at 10 — this gives the real count for large teams.
+   */
+  async getModCount(): Promise<number> {
+    try {
+      const count = await this.redis.zCard(`${this.subredditId}:mod:all`);
+      return count ?? 0;
+    } catch {
+      return 0;
     }
   }
 
@@ -909,11 +940,27 @@ export class ModVigilRedis {
   }
 
   /**
+   * Seeds the install date for demo purposes (30 days ago).
+   * Only sets if the key doesn't already exist — never overwrites real production data.
+   */
+  async seedInstallDate(): Promise<void> {
+    try {
+      const existing = await this.redis.get(`${this.subredditId}:meta:install`);
+      if (existing === null) {
+        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+        await this.redis.set(`${this.subredditId}:meta:install`, thirtyDaysAgo);
+      }
+    } catch (err) {
+      console.error('[Redis:seedInstallDate]', err);
+    }
+  }
+
+  /**
    * FIX #3: Clears all demo data written by populateDemoData so production state stays clean.
    */
   async clearDemoData(): Promise<void> {
     try {
-      const demoMods = ['ModChampion', 'NightWatch', 'WeekendWarrior', 'CasualMod', 'GhostMod_Inactive'];
+      const demoMods = ['ModChampion', 'NightWatch', 'WeekendWarrior', 'CasualMod', 'former_mod_2024'];
       const ops: Promise<unknown>[] = [];
 
       for (const m of demoMods) {

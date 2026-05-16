@@ -1,8 +1,15 @@
 /** @jsxRuntime classic */
 /** @jsx React.createElement */
-import React from 'react';
+import React, { useEffect } from 'react';
 
 export const HelpModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+  // FIX 11: Escape key closes modal
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onClose]);
+
   return (
     <div
       style={{
@@ -22,7 +29,8 @@ export const HelpModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     >
       <div
         style={{
-          backgroundColor: 'white',
+          // FIX 5: use CSS vars instead of hardcoded white
+          backgroundColor: 'var(--color-neutral-background-strong)',
           borderRadius: '16px',
           maxWidth: '700px',
           maxHeight: '80vh',
@@ -33,7 +41,7 @@ export const HelpModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         onClick={(e) => e.stopPropagation()}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-          <h2 style={{ margin: 0, fontSize: '24px', fontWeight: '900', color: '#1A1A1B' }}>
+          <h2 style={{ margin: 0, fontSize: '24px', fontWeight: '900', color: 'var(--color-neutral-content)' }}>
             📚 ModVigil Help Guide
           </h2>
           <button
@@ -43,7 +51,7 @@ export const HelpModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
               border: 'none',
               fontSize: '24px',
               cursor: 'pointer',
-              color: '#878A8C',
+              color: 'var(--color-neutral-content-weak)',
               padding: '0',
               width: '32px',
               height: '32px',
@@ -53,7 +61,7 @@ export const HelpModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           </button>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', color: '#1A1A1B' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', color: 'var(--color-neutral-content)' }}>
           {/* Action Items */}
           <section>
             <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#FF4500', marginBottom: '8px' }}>
@@ -65,7 +73,7 @@ export const HelpModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             <ul style={{ marginTop: '8px', paddingLeft: '20px', fontSize: '14px', lineHeight: '1.6' }}>
               <li><strong style={{ color: '#EA0027' }}>URGENT:</strong> Coverage gaps, flagged users (4+ removals), critically low approval rate</li>
               <li><strong style={{ color: '#B8860B' }}>IMPORTANT:</strong> AutoMod candidates (single reason ≥50%), ghost mods, heavy team load</li>
-              <li><strong style={{ color: '#878A8C' }}>SUGGESTED:</strong> Polish, optimisation, light-load notes</li>
+              <li><strong style={{ color: 'var(--color-neutral-content-weak)' }}>SUGGESTED:</strong> Polish, optimisation, light-load notes</li>
             </ul>
           </section>
 
@@ -83,7 +91,7 @@ export const HelpModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
               <li>Weekly digest generated: <strong>1.5h</strong> (collecting + summarising stats)</li>
               <li>Ghost-mod check-in: <strong>8 min</strong> (drafting + sending PM)</li>
             </ul>
-            <p style={{ marginTop: '8px', fontSize: '13px', color: '#878A8C' }}>
+            <p style={{ marginTop: '8px', fontSize: '13px', color: 'var(--color-neutral-content-weak)' }}>
               Dollar value uses $25/hour as a reference rate for volunteer mod time.
             </p>
           </section>
@@ -101,7 +109,7 @@ export const HelpModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
               <li><strong>Approval rate:</strong> change in percentage points (pp)</li>
               <li><strong>Days active:</strong> how many of 7 days had any moderation</li>
             </ul>
-            <p style={{ marginTop: '8px', fontSize: '13px', color: '#878A8C' }}>
+            <p style={{ marginTop: '8px', fontSize: '13px', color: 'var(--color-neutral-content-weak)' }}>
               Shows "no prior data" until you've been installed at least 5 weeks.
             </p>
           </section>
@@ -128,7 +136,7 @@ export const HelpModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             </h3>
             <p style={{ margin: 0, lineHeight: '1.6', fontSize: '14px' }}>
               Pattern-matched YAML rules you can paste into{' '}
-              <code style={{ background: '#F6F7F8', padding: '1px 5px', borderRadius: '4px', fontSize: '12px' }}>
+              <code style={{ background: 'var(--color-neutral-background)', padding: '1px 5px', borderRadius: '4px', fontSize: '12px' }}>
                 /wiki/config/automoderator
               </code>. Each rule includes a caveat — read it before deploying.
             </p>
@@ -142,14 +150,14 @@ export const HelpModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#FF4500', marginBottom: '8px' }}>
               🏥 Health Score (0-100)
             </h3>
-            <p style={{ margin: 0, lineHeight: '1.6', color: '#1A1A1B', fontSize: '14px' }}>
+            <p style={{ margin: 0, lineHeight: '1.6', color: 'var(--color-neutral-content)', fontSize: '14px' }}>
               Measures your subreddit's moderation health based on:
             </p>
             <ul style={{ marginTop: '8px', paddingLeft: '20px', fontSize: '14px', lineHeight: '1.6' }}>
               <li><strong>70% Coverage:</strong> How many hours per day have mod activity</li>
               <li><strong>30% Volume:</strong> Total moderation actions per week</li>
             </ul>
-            <div style={{ marginTop: '8px', padding: '12px', backgroundColor: '#F6F7F8', borderRadius: '8px', fontSize: '13px' }}>
+            <div style={{ marginTop: '8px', padding: '12px', backgroundColor: 'var(--color-neutral-background)', borderRadius: '8px', fontSize: '13px' }}>
               <strong>90-100:</strong> Elite (24/7 coverage) • <strong>70-89:</strong> Stable • <strong>0-69:</strong> Critical
             </div>
           </section>
@@ -186,7 +194,7 @@ export const HelpModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             <p style={{ margin: 0, lineHeight: '1.6', fontSize: '14px' }}>
               Percentage of mod actions that approve content (vs. remove). Higher rate = more permissive moderation.
             </p>
-            <div style={{ marginTop: '8px', padding: '12px', backgroundColor: '#F6F7F8', borderRadius: '8px', fontSize: '13px' }}>
+            <div style={{ marginTop: '8px', padding: '12px', backgroundColor: 'var(--color-neutral-background)', borderRadius: '8px', fontSize: '13px' }}>
               <strong>Typical range:</strong> 20-40% approval rate is normal for active communities
             </div>
           </section>
@@ -237,10 +245,10 @@ export const HelpModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             <p style={{ margin: 0, lineHeight: '1.6', fontSize: '14px' }}>
               Real-time risk score (0–100) predicting whether a raid or coordinated attack is incoming. Calculated from three velocity signals: activity ratio vs your historical baseline, acceleration (last 15 min vs prior 15 min), and absolute volume.
             </p>
-            <div style={{ marginTop: '8px', padding: '12px', backgroundColor: '#F6F7F8', borderRadius: '8px', fontSize: '13px' }}>
+            <div style={{ marginTop: '8px', padding: '12px', backgroundColor: 'var(--color-neutral-background)', borderRadius: '8px', fontSize: '13px' }}>
               <strong>NORMAL</strong> → <strong>ELEVATED</strong> → <strong>HIGH RISK</strong> → <strong>RAID LIKELY</strong>
             </div>
-            <p style={{ marginTop: '8px', fontSize: '13px', color: '#878A8C' }}>
+            <p style={{ marginTop: '8px', fontSize: '13px', color: 'var(--color-neutral-content-weak)' }}>
               An ALERT badge pulses at score ≥ 60.
             </p>
           </section>
@@ -253,7 +261,7 @@ export const HelpModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             <p style={{ margin: 0, lineHeight: '1.6', fontSize: '14px' }}>
               Compares your subreddit's moderation stats against all other subreddits running ModVigil. Shows your percentile rank for weekly actions, approval rate, health score, and team size.
             </p>
-            <div style={{ marginTop: '8px', padding: '12px', backgroundColor: '#F6F7F8', borderRadius: '8px', fontSize: '13px' }}>
+            <div style={{ marginTop: '8px', padding: '12px', backgroundColor: 'var(--color-neutral-background)', borderRadius: '8px', fontSize: '13px' }}>
               Data is anonymized and updates on every dashboard load. Populates as more subreddits install ModVigil.
             </div>
           </section>

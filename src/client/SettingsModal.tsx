@@ -1,6 +1,6 @@
 /** @jsxRuntime classic */
 /** @jsx React.createElement */
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -19,6 +19,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, currentSe
   // FIX 12: hold latest onClose in a ref so the effect never needs it as a dep
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+
+  // FIX 11: Escape key closes modal
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onClose]);
 
   React.useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -65,7 +72,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, currentSe
     >
       <div
         style={{
-          backgroundColor: 'white',
+          // FIX 5: use CSS vars instead of hardcoded white
+          backgroundColor: 'var(--color-neutral-background-strong)',
           borderRadius: '16px',
           maxWidth: '600px',
           width: '100%',
@@ -75,7 +83,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, currentSe
         onClick={(e) => e.stopPropagation()}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-          <h2 style={{ margin: 0, fontSize: '24px', fontWeight: '900', color: '#1A1A1B' }}>
+          <h2 style={{ margin: 0, fontSize: '24px', fontWeight: '900', color: 'var(--color-neutral-content)' }}>
             ⚙️ Settings
           </h2>
           <button
@@ -85,7 +93,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, currentSe
               border: 'none',
               fontSize: '24px',
               cursor: 'pointer',
-              color: '#878A8C',
+              color: 'var(--color-neutral-content-weak)',
               padding: '0',
               width: '32px',
               height: '32px',
@@ -113,10 +121,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, currentSe
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           {/* Spike Threshold */}
           <div>
-            <label style={{ display: 'block', fontSize: '14px', fontWeight: '700', color: '#1A1A1B', marginBottom: '8px' }}>
+            <label style={{ display: 'block', fontSize: '14px', fontWeight: '700', color: 'var(--color-neutral-content)', marginBottom: '8px' }}>
               🚨 Spike Detection Threshold
             </label>
-            <p style={{ margin: '0 0 12px 0', fontSize: '13px', color: '#878A8C', lineHeight: '1.5' }}>
+            <p style={{ margin: '0 0 12px 0', fontSize: '13px', color: 'var(--color-neutral-content-weak)', lineHeight: '1.5' }}>
               Alert when activity exceeds baseline by this multiplier. Lower = more sensitive.
             </p>
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
@@ -130,7 +138,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, currentSe
                 style={{ flex: 1, cursor: 'pointer' }}
               />
               <div style={{
-                backgroundColor: '#F6F7F8',
+                backgroundColor: 'var(--color-neutral-background)',
                 padding: '8px 16px',
                 borderRadius: '8px',
                 fontSize: '16px',
@@ -142,7 +150,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, currentSe
                 {spikeThreshold}×
               </div>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px', fontSize: '12px', color: '#878A8C' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px', fontSize: '12px', color: 'var(--color-neutral-content-weak)' }}>
               <span>More alerts</span>
               <span>Fewer alerts</span>
             </div>
@@ -158,10 +166,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, currentSe
                 style={{ width: '20px', height: '20px', cursor: 'pointer' }}
               />
               <div>
-                <div style={{ fontSize: '14px', fontWeight: '700', color: '#1A1A1B' }}>
+                <div style={{ fontSize: '14px', fontWeight: '700', color: 'var(--color-neutral-content)' }}>
                   📢 Transparency Mode
                 </div>
-                <div style={{ fontSize: '13px', color: '#878A8C', marginTop: '4px' }}>
+                <div style={{ fontSize: '13px', color: 'var(--color-neutral-content-weak)', marginTop: '4px' }}>
                   Post weekly digest publicly (instead of mod-only modmail)
                 </div>
               </div>
@@ -178,10 +186,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, currentSe
                 style={{ width: '20px', height: '20px', cursor: 'pointer' }}
               />
               <div>
-                <div style={{ fontSize: '14px', fontWeight: '700', color: '#1A1A1B' }}>
+                <div style={{ fontSize: '14px', fontWeight: '700', color: 'var(--color-neutral-content)' }}>
                   ⚠️ Automated User Warnings
                 </div>
-                <div style={{ fontSize: '13px', color: '#878A8C', marginTop: '4px' }}>
+                <div style={{ fontSize: '13px', color: 'var(--color-neutral-content-weak)', marginTop: '4px' }}>
                   Send progressive warning PMs to users with multiple removals
                 </div>
               </div>
@@ -195,9 +203,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, currentSe
             style={{
               flex: 1,
               padding: '12px',
-              backgroundColor: '#F6F7F8',
-              color: '#1A1A1B',
-              border: '1px solid #EDEFF1',
+              backgroundColor: 'var(--color-neutral-background)',
+              color: 'var(--color-neutral-content)',
+              border: '1px solid var(--color-neutral-border)',
               borderRadius: '8px',
               fontSize: '14px',
               fontWeight: 'bold',

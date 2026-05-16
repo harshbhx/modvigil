@@ -29,7 +29,8 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ data }) => {
     );
   }
 
-  const maxActions = Math.max(...data.map(m => m.count));
+  // FIX 9: Math.max(..., 1) prevents division by zero when all counts are 0
+  const maxActions = Math.max(...data.map(m => m.count), 1);
 
   return (
     <div className="leaderboard">

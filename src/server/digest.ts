@@ -48,8 +48,8 @@ export async function generateWeeklyDigest(_event: unknown, context: ScheduledJo
         ? 'N/A (first week of data)'
         : `${percentChange >= 0 ? '▲' : '▼'} ${Math.abs(percentChange).toFixed(1)}% vs last week`;
 
-    // 3. Get other stats
-    const leaderboard = await db.getLeaderboard();
+    // FIX 2: use 7-day leaderboard so digest reports most active mod THIS WEEK, not all-time
+    const leaderboard = await db.getLeaderboard7d();
     const topMod = leaderboard.length > 0 ? leaderboard[0].username : 'None';
 
     // FIX #30: Aggregate approval rate over 7 days, not just today

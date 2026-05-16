@@ -113,8 +113,9 @@ export const App: React.FC = () => {
   const [showSettings, setShowSettings] = useState(false);
   // FIX #18: Toast replaces alert()
   const [toast, setToast] = useState<string | null>(null);
-  // FIX #33: Live "updated X seconds ago" timestamp
-  const [updatedAt, setUpdatedAt] = useState<number>(Date.now());
+  // FIX 2: ref holds the real "data arrived" timestamp; tick forces re-renders
+  const updatedAtRef = useRef<number>(Date.now());
+  const [, setTick] = useState(0);
   // FIX 4: ref to hold the retry hard-timeout so it can be cleared/reset
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -217,11 +218,11 @@ export const App: React.FC = () => {
                   : null,
                 message: typeof raw.benchmarkData.message === 'string' ? raw.benchmarkData.message : null,
               } as BenchmarkData
-            : { totalSubreddits: 0, percentiles: null, message: 'Loading benchmark data...' },
+            : { totalSubreddits: 0, percentiles: null, message: 'No benchmark data yet. Populates as more subreddits install ModVigil.' },
         };
         setData(normalized);
-        // FIX #33: Record when data was last received
-        setUpdatedAt(Date.now());
+        // FIX 2: update ref (not state) so the interval can compute elapsed time
+        updatedAtRef.current = Date.now();
         setLoading(false);
         retryTimeouts.forEach(t => clearTimeout(t));
       }
@@ -271,12 +272,9 @@ export const App: React.FC = () => {
     };
   }, []);
 
-  // FIX #33: Rerender footer timestamp every 10 seconds
+  // FIX 2: tick forces re-render every 10s so elapsed time display updates
   useEffect(() => {
-    const interval = setInterval(() => {
-      // FIX 1: Use Date.now() so state actually changes and triggers re-render
-      setUpdatedAt(Date.now());
-    }, 10000);
+    const interval = setInterval(() => setTick(t => t + 1), 10000);
     return () => clearInterval(interval);
   }, []);
 
@@ -397,8 +395,8 @@ export const App: React.FC = () => {
     );
   }
 
-  // FIX #33: Compute seconds since last data update
-  const secondsSinceUpdate = Math.floor((Date.now() - updatedAt) / 1000);
+  // FIX 2: compute elapsed from ref so it never resets on re-render
+  const secondsSinceUpdate = Math.floor((Date.now() - updatedAtRef.current) / 1000);
   const updatedLabel = secondsSinceUpdate < 5 ? 'Just now' : `${secondsSinceUpdate}s ago`;
 
   return (
@@ -415,6 +413,24 @@ export const App: React.FC = () => {
           <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: 'var(--color-neutral-content-weak)', fontWeight: '500' }}>Comprehensive Moderation Intelligence Command Center</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {/* FIX 1: Demo button always visible in header so judges can load data on cold install */}
+          <button
+            onClick={() => {
+              window.parent.postMessage({ type: 'POPULATE_DEMO_DATA' }, '*');
+              setTimeout(() => window.parent.postMessage({ type: 'GET_DASHBOARD_DATA' }, '*'), 2000);
+            }}
+            style={{
+              fontSize: '11px',
+              padding: '4px 8px',
+              background: 'transparent',
+              border: '1px solid var(--color-neutral-border)',
+              borderRadius: '4px',
+              color: 'var(--color-neutral-content-weak)',
+              cursor: 'pointer',
+            }}
+          >
+            Demo
+          </button>
           <button onClick={() => setShowSettings(true)} style={{ backgroundColor: 'var(--color-neutral-background-weak)', border: '1px solid var(--color-neutral-border)', borderRadius: '8px', padding: '8px 12px', cursor: 'pointer', fontSize: '14px', fontWeight: '600', color: 'var(--color-neutral-content)', display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ fontSize: '16px' }}>⚙️</span>Settings
           </button>
@@ -488,7 +504,8 @@ export const App: React.FC = () => {
 
         <AutoModSuggestions suggestions={data.autoModSuggestions} />
 
-        <section style={{ backgroundColor: 'white', padding: '24px', borderRadius: '16px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', border: '1px solid #EDEFF1' }}>
+        {/* FIX 6: use CSS vars instead of hardcoded white/border */}
+        <section style={{ backgroundColor: 'var(--color-neutral-background-strong)', padding: '24px', borderRadius: '16px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', border: '1px solid var(--color-neutral-border)' }}>
           <Heatmap data={data.heatmapData} title="Subreddit Coverage Heatmap (24/7 Matrix)" />
         </section>
       </main>
