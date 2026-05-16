@@ -14,6 +14,7 @@ import { TrendInsights } from './TrendInsights.js';
 import { ModInsights, type ModInsight } from './ModInsights.js';
 import { AutoModSuggestions, type AutoModSuggestion } from './AutoModSuggestions.js';
 import { FlaggedUsers, type FlaggedUser } from './FlaggedUsers.js';
+import { RaidPrediction, type RaidRiskData } from './RaidPrediction.js';
 
 // FIX #8: currentSettings added to DashboardData so SettingsModal shows real saved values
 interface DashboardData {
@@ -45,6 +46,7 @@ interface DashboardData {
   recommendations: Recommendation[];
   autoModSuggestions: AutoModSuggestion[];
   flaggedUsers: FlaggedUser[];
+  raidRisk: RaidRiskData;
 }
 
 const SYSTEM_FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
@@ -189,6 +191,16 @@ export const App: React.FC = () => {
           recommendations: Array.isArray(raw.recommendations) ? raw.recommendations : [],
           autoModSuggestions: Array.isArray(raw.autoModSuggestions) ? raw.autoModSuggestions : [],
           flaggedUsers: Array.isArray(raw.flaggedUsers) ? raw.flaggedUsers : [],
+          raidRisk: raw.raidRisk && typeof raw.raidRisk === 'object'
+            ? {
+                score: Number.isFinite(raw.raidRisk.score) ? raw.raidRisk.score : 0,
+                level: typeof raw.raidRisk.level === 'string' ? raw.raidRisk.level : 'NORMAL',
+                signals: Array.isArray(raw.raidRisk.signals) ? raw.raidRisk.signals : ['Insufficient data'],
+                recommendation: typeof raw.raidRisk.recommendation === 'string' ? raw.raidRisk.recommendation : 'No action needed.',
+                last15min: Number.isFinite(raw.raidRisk.last15min) ? raw.raidRisk.last15min : 0,
+                last30min: Number.isFinite(raw.raidRisk.last30min) ? raw.raidRisk.last30min : 0,
+              } as RaidRiskData
+            : { score: 0, level: 'NORMAL' as const, signals: ['Insufficient data'], recommendation: 'No action needed.', last15min: 0, last30min: 0 },
         };
         setData(normalized);
         // FIX #33: Record when data was last received
@@ -400,6 +412,8 @@ export const App: React.FC = () => {
 
       <main style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
         <ActionItems recommendations={data.recommendations} />
+
+        <RaidPrediction data={data.raidRisk} />
 
         <FlaggedUsers users={data.flaggedUsers} />
 

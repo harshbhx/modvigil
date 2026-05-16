@@ -6,6 +6,7 @@ import { generateWeeklyDigest } from './server/digest.js';
 import { populateDemoData } from './server/demoData.js';
 import { buildRecommendations } from './server/recommendations.js';
 import { buildAutoModSuggestions } from './server/autoModSuggestions.js';
+import { calculateRaidRisk } from './server/raidPrediction.js';
 
 /**
  * FIX #4:  Menu item caches dashboard post id — no longer creates a new post on every click.
@@ -205,7 +206,7 @@ Devvit.addCustomPostType({
                 const db = new ModVigilRedis(context.redis, subredditId);
                 const dateStr = new Date().toISOString().split('T')[0];
 
-                const [dailyTotals, heatmapData, leaderboard, healthScore, approvalRate, topReasons, topReasons7d, ghostMods, spikeThreshold, transparencyMode, enableWarnings, stats, installDate, modInsights, trend, flaggedUsers, autoModSuggestions] = await Promise.all([
+                const [dailyTotals, heatmapData, leaderboard, healthScore, approvalRate, topReasons, topReasons7d, ghostMods, spikeThreshold, transparencyMode, enableWarnings, stats, installDate, modInsights, trend, flaggedUsers, autoModSuggestions, raidRisk] = await Promise.all([
                   db.getLast7DaysTotals(),
                   db.getHeatmapData(),
                   db.getLeaderboard7d(),
@@ -224,6 +225,7 @@ Devvit.addCustomPostType({
                   db.getTrendComparison(),
                   db.getFlaggedUsers(),
                   buildAutoModSuggestions(db),
+                  calculateRaidRisk(db),
                 ]);
 
                 const todayTotals = await db.getDailyTotals(dateStr);
@@ -283,6 +285,8 @@ Devvit.addCustomPostType({
                     recommendations,
                     autoModSuggestions,
                     flaggedUsers,
+                    // Phase 3: Raid Prediction
+                    raidRisk,
                   },
                 } as unknown as Parameters<typeof context.ui.webView.postMessage>[1]);
               } catch (error) {

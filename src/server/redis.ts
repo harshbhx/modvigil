@@ -743,6 +743,55 @@ export class ModVigilRedis {
   }
 
   /**
+   * Counts actions in a Unix-second time window by querying the sorted sets.
+   * Used by raidPrediction.ts to compute velocity signals.
+   */
+  async getActionCountInWindow(startSec: number, endSec: number): Promise<number> {
+    try {
+      const startDate = new Date(startSec * 1000);
+      const endDate = new Date(endSec * 1000);
+      const startHour = startDate.getUTCHours();
+      const endHour = endDate.getUTCHours();
+      const startDateStr = startDate.toISOString().slice(0, 10);
+      const endDateStr = endDate.toISOString().slice(0, 10);
+
+      if (startDateStr === endDateStr && startHour === endHour) {
+        const key = `${this.subredditId}:actions:${endDateStr}:${String(endHour).padStart(2, '0')}`;
+        const members = await this.redis.zRange(key, startSec, endSec, { by: 'score' });
+        return members?.length ?? 0;
+      }
+
+      // Window spans two hours (or two days)
+      const key1 = `${this.subredditId}:actions:${startDateStr}:${String(startHour).padStart(2, '0')}`;
+      const key2 = `${this.subredditId}:actions:${endDateStr}:${String(endHour).padStart(2, '0')}`;
+      const [m1, m2] = await Promise.all([
+        this.redis.zRange(key1, startSec, endSec, { by: 'score' }),
+        this.redis.zRange(key2, startSec, endSec, { by: 'score' }),
+      ]);
+      return (m1?.length ?? 0) + (m2?.length ?? 0);
+    } catch (err) {
+      console.error('[Redis:getActionCountInWindow]', err);
+      return 0;
+    }
+  }
+
+  /**
+   * Reads the spike baseline for a given dayOfWeek + hour slot.
+   * Used by raidPrediction.ts to compare current velocity against normal.
+   */
+  async getBaselineForSlot(dayOfWeek: number, hour: number): Promise<number> {
+    try {
+      const key = `${this.subredditId}:spike:baseline:${dayOfWeek}:${String(hour).padStart(2, '0')}`;
+      const val = await this.redis.get(key);
+      if (val == null) return 0;
+      const v = parseFloat(val);
+      return Number.isFinite(v) ? v : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  /**
    * FIX #3: Clears all demo data written by populateDemoData so production state stays clean.
    */
   async clearDemoData(): Promise<void> {
