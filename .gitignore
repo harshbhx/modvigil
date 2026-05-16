@@ -9,6 +9,7 @@ npm-debug.log*
 # Build
 dist/
 build/
+webroot/bundle.js
 
 # OS
 .DS_Store

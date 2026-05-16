@@ -5,7 +5,12 @@
   "type": "module",
   "scripts": {
     "devvit": "devvit",
+    "build:client": "node scripts/build-client.mjs",
+    "build": "npm run build:client",
+    "preupload": "npm run build:client",
     "upload": "devvit upload",
+    "preplaytest": "npm run build:client",
+    "playtest": "devvit playtest",
     "test": "vitest run"
   },
   "dependencies": {
@@ -17,6 +22,7 @@
     "@devvit/cli": "0.12.23",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "esbuild": "^0.28.0",
     "typescript": "5.4.5",
     "vitest": "1.6.0"
   },
