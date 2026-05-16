@@ -248,6 +248,16 @@ Devvit.addCustomPostType({
                   topRemovalReasons: topReasons7d,
                 });
 
+                // Benchmarking: publish this subreddit's stats (fire-and-forget) then read percentiles
+                const benchmarkStats = {
+                  weeklyActions: totalActions7d,
+                  approvalRate,
+                  healthScore,
+                  teamSize: leaderboard.length,
+                };
+                db.publishBenchmarkStats(benchmarkStats).catch(console.error);
+                const benchmarkData = await db.getBenchmarkData(benchmarkStats);
+
                 // FIX 4: compute lastActionAt from mod:lastactive Redis keys for
                 // leaderboard members instead of hardcoding 0.
                 let lastActionAt = 0;
@@ -287,6 +297,8 @@ Devvit.addCustomPostType({
                     flaggedUsers,
                     // Phase 3: Raid Prediction
                     raidRisk,
+                    // Phase 4: Benchmarking
+                    benchmarkData,
                   },
                 } as unknown as Parameters<typeof context.ui.webView.postMessage>[1]);
               } catch (error) {

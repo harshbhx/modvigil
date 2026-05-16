@@ -114,9 +114,13 @@ export async function checkForSpike(_event: unknown, context: ScheduledJobContex
     const baselineStr = await context.redis.get(baselineKey);
     const baseline = safeFloat(baselineStr);
 
-    // 3. Get threshold from settings (Redis first, fallback to default)
-    const thresholdRaw = await db.getSetting<number>('spikeThreshold', 3.0);
-    // Defense-in-depth: getSetting can return NaN if a malformed value was stored
+    // 3. Get threshold: Redis (in-app SettingsModal) → devvit.yaml setting → hardcoded default.
+    // This ensures mods who configure via Reddit's native settings page are respected.
+    const rawRedisThreshold = await context.redis.get(`${subredditId}:settings:spikeThreshold`);
+    const thresholdRaw = rawRedisThreshold !== null
+      ? parseFloat(rawRedisThreshold)
+      : (((await context.settings.get('spikeThreshold')) as number | undefined) ?? 3.0);
+    // Defense-in-depth: never use NaN or non-positive threshold
     const threshold = Number.isFinite(thresholdRaw) && thresholdRaw > 0 ? thresholdRaw : 3.0;
 
     // FIX #17: Floor elapsed ratio at 25% to avoid hyper-sensitivity at minute 0

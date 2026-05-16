@@ -15,6 +15,8 @@ import { ModInsights, type ModInsight } from './ModInsights.js';
 import { AutoModSuggestions, type AutoModSuggestion } from './AutoModSuggestions.js';
 import { FlaggedUsers, type FlaggedUser } from './FlaggedUsers.js';
 import { RaidPrediction, type RaidRiskData } from './RaidPrediction.js';
+import Benchmarking from './Benchmarking.js';
+import type { BenchmarkData } from '../server/redis.js';
 
 // FIX #8: currentSettings added to DashboardData so SettingsModal shows real saved values
 interface DashboardData {
@@ -47,6 +49,7 @@ interface DashboardData {
   autoModSuggestions: AutoModSuggestion[];
   flaggedUsers: FlaggedUser[];
   raidRisk: RaidRiskData;
+  benchmarkData: BenchmarkData;
 }
 
 const SYSTEM_FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
@@ -201,6 +204,20 @@ export const App: React.FC = () => {
                 last30min: Number.isFinite(raw.raidRisk.last30min) ? raw.raidRisk.last30min : 0,
               } as RaidRiskData
             : { score: 0, level: 'NORMAL' as const, signals: ['Insufficient data'], recommendation: 'No action needed.', last15min: 0, last30min: 0 },
+          benchmarkData: raw.benchmarkData && typeof raw.benchmarkData === 'object'
+            ? {
+                totalSubreddits: Number.isFinite(raw.benchmarkData.totalSubreddits) ? raw.benchmarkData.totalSubreddits : 0,
+                percentiles: raw.benchmarkData.percentiles && typeof raw.benchmarkData.percentiles === 'object'
+                  ? {
+                      weeklyActions: Number.isFinite(raw.benchmarkData.percentiles.weeklyActions) ? raw.benchmarkData.percentiles.weeklyActions : 0,
+                      approvalRate: Number.isFinite(raw.benchmarkData.percentiles.approvalRate) ? raw.benchmarkData.percentiles.approvalRate : 0,
+                      healthScore: Number.isFinite(raw.benchmarkData.percentiles.healthScore) ? raw.benchmarkData.percentiles.healthScore : 0,
+                      teamSize: Number.isFinite(raw.benchmarkData.percentiles.teamSize) ? raw.benchmarkData.percentiles.teamSize : 0,
+                    }
+                  : null,
+                message: typeof raw.benchmarkData.message === 'string' ? raw.benchmarkData.message : null,
+              } as BenchmarkData
+            : { totalSubreddits: 0, percentiles: null, message: 'Loading benchmark data...' },
         };
         setData(normalized);
         // FIX #33: Record when data was last received
@@ -455,6 +472,8 @@ export const App: React.FC = () => {
             healthScore={data.healthScore}
           />
         </div>
+
+        <Benchmarking data={data.benchmarkData} />
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(450px, 1fr))', gap: '24px' }}>
           <section style={{ backgroundColor: 'var(--color-neutral-background-strong)', padding: '24px', borderRadius: '16px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', border: '1px solid var(--color-neutral-border)' }}>

@@ -37,6 +37,17 @@ export interface ActionRecord {
   reason?: string | null;
 }
 
+export interface BenchmarkData {
+  totalSubreddits: number;
+  percentiles: {
+    weeklyActions: number;
+    approvalRate: number;
+    healthScore: number;
+    teamSize: number;
+  } | null;
+  message: string | null;
+}
+
 export class ModVigilRedis {
   constructor(
     private redis: RedisClient,
@@ -788,6 +799,84 @@ export class ModVigilRedis {
       return Number.isFinite(v) ? v : 0;
     } catch {
       return 0;
+    }
+  }
+
+  /**
+   * Writes this subreddit's anonymized stats to the global benchmark pool.
+   * Uses a key WITHOUT subredditId prefix — intentionally shared across all installs.
+   */
+  async publishBenchmarkStats(stats: {
+    weeklyActions: number;
+    approvalRate: number;
+    healthScore: number;
+    teamSize: number;
+  }): Promise<void> {
+    try {
+      // Global key — no subredditId prefix — shared across all ModVigil installs
+      const key = `global:benchmarks`;
+      await this.redis.hSet(key, {
+        [this.subredditId]: JSON.stringify({
+          ...stats,
+          updatedAt: Date.now(),
+        }),
+      });
+    } catch (err) {
+      console.error('[Redis:publishBenchmarkStats]', err);
+    }
+  }
+
+  /**
+   * Reads all benchmark entries and computes percentile rank for this subreddit.
+   * Only includes entries updated in the last 30 days.
+   */
+  async getBenchmarkData(myStats: {
+    weeklyActions: number;
+    approvalRate: number;
+    healthScore: number;
+    teamSize: number;
+  }): Promise<BenchmarkData> {
+    try {
+      const raw = (await this.redis.hGetAll(`global:benchmarks`)) ?? {};
+      const entries = Object.values(raw)
+        .map(v => { try { return JSON.parse(v as string); } catch { return null; } })
+        .filter(Boolean) as Array<{ weeklyActions: number; approvalRate: number; healthScore: number; teamSize: number; updatedAt: number }>;
+
+      // Only include entries updated in the last 30 days
+      const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+      const recent = entries.filter(e => e.updatedAt > cutoff);
+
+      if (recent.length < 2) {
+        return {
+          totalSubreddits: recent.length,
+          percentiles: null,
+          message: 'Be the first to benchmark! Data populates as more subreddits install ModVigil.',
+        };
+      }
+
+      const pct = (arr: number[], val: number) => {
+        const below = arr.filter(x => x < val).length;
+        return Math.round((below / arr.length) * 100);
+      };
+
+      const allActions = recent.map(e => e.weeklyActions);
+      const allApproval = recent.map(e => e.approvalRate);
+      const allHealth = recent.map(e => e.healthScore);
+      const allTeam = recent.map(e => e.teamSize);
+
+      return {
+        totalSubreddits: recent.length,
+        percentiles: {
+          weeklyActions: pct(allActions, myStats.weeklyActions),
+          approvalRate: pct(allApproval, myStats.approvalRate),
+          healthScore: pct(allHealth, myStats.healthScore),
+          teamSize: pct(allTeam, myStats.teamSize),
+        },
+        message: null,
+      };
+    } catch (err) {
+      console.error('[Redis:getBenchmarkData]', err);
+      return { totalSubreddits: 0, percentiles: null, message: 'Benchmark data unavailable.' };
     }
   }
 

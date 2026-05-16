@@ -109,7 +109,11 @@ export async function generateWeeklyDigest(_event: unknown, context: ScheduledJo
     // Anything other than the exact boolean `true` or the literal string 'true'
     // stays mod-only. Treats 'false', '0', '', undefined and any unexpected
     // value as false even if `getSetting` ever returns something unexpected.
-    const transparencyModeRaw: unknown = await db.getSetting<boolean>('transparencyMode', false);
+    // Fallback chain: Redis (in-app SettingsModal) → devvit.yaml setting → false.
+    const rawRedisTransparency = await context.redis.get(`${subredditId}:settings:transparencyMode`);
+    const transparencyModeRaw: unknown = rawRedisTransparency !== null
+      ? rawRedisTransparency
+      : (((await context.settings.get('transparencyMode')) as boolean | undefined) ?? false);
     const transparencyMode =
       transparencyModeRaw === true ||
       (typeof transparencyModeRaw === 'string' && transparencyModeRaw.toLowerCase() === 'true');

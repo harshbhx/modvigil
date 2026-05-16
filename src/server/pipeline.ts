@@ -117,7 +117,11 @@ export async function handleModAction(
 
       console.log(`⚠️ [ModVigil Pipeline] User u/${targetAuthor} now has ${newCount} removals.`);
 
-      const warningsEnabled = await db.getSetting('enableWarnings', true);
+      // Fallback chain: Redis (in-app SettingsModal) → devvit.yaml setting → true.
+      const rawRedisWarnings = await context.redis.get(`${subredditId}:settings:enableWarnings`);
+      const warningsEnabled = rawRedisWarnings !== null
+        ? rawRedisWarnings === 'true'
+        : ((await context.settings.get<boolean>('enableWarnings')) ?? true);
       if (warningsEnabled && (newCount === 2 || newCount === 3 || newCount >= 4)) {
         await handleUserWarning(rawTargetAuthor, subredditName, newCount, context);
       }
