@@ -58,7 +58,8 @@ export async function populateDemoData(redis: ModVigilRedis, _subredditId: strin
 
     for (let dayOffset = 6; dayOffset >= 0; dayOffset--) {
       const date = new Date(now);
-      date.setDate(date.getDate() - dayOffset);
+      // FIX (audit #2): UTC arithmetic so the dateStr matches the UTC-keyed buckets
+      date.setUTCDate(date.getUTCDate() - dayOffset);
       const dateStr = date.toISOString().split('T')[0];
 
       // FIX #16: Collect all actions for this day then write in parallel
@@ -147,7 +148,8 @@ async function seedPriorPeriod(redis: ModVigilRedis, _subredditId: string, curre
 
   for (let i = 0; i < 7; i++) {
     const d = new Date(now);
-    d.setDate(d.getDate() - (i + 28));
+    // FIX (audit #2): UTC arithmetic
+    d.setUTCDate(d.getUTCDate() - (i + 28));
     const dateStr = d.toISOString().split('T')[0];
 
     const removelink = Math.floor(perDay * 0.40);

@@ -89,11 +89,11 @@ export async function handleModAction(
       const warnCountKey = `warn:count:${subredditId}:${targetAuthor}`;
 
       const newCount = await context.redis.incrBy(warnCountKey, 1);
-      // FIX #21: Only set TTL on first increment to preserve the 30-day rolling window
-      // from the first removal, not the most recent one (which would reset the window).
-      if (newCount === 1) {
-        await context.redis.expire(warnCountKey, 30 * 24 * 60 * 60);
-      }
+      // FIX (audit #3): Always set TTL after incrBy. If the first attempt's expire
+      // failed (network blip), the key would otherwise be permanent. Re-setting on
+      // every increment slightly shifts the 30-day window forward but eliminates
+      // the unbounded-growth failure mode.
+      await context.redis.expire(warnCountKey, 30 * 24 * 60 * 60);
 
       // FIX #10: Field name is the action type (e.g. "removelink"), not a human reason.
       // Renamed variable to `removalType` to be honest about what is being stored.

@@ -127,7 +127,8 @@ export class ModVigilRedis {
       const promises = [];
       for (let i = 6; i >= 0; i--) {
         const d = new Date();
-        d.setDate(d.getDate() - i);
+        // FIX (audit #2): UTC arithmetic to match the UTC-based date string output
+        d.setUTCDate(d.getUTCDate() - i);
         const dateStr = d.toISOString().split('T')[0];
         promises.push(
           this.getDailyTotals(dateStr).then(totals => ({
@@ -155,7 +156,8 @@ export class ModVigilRedis {
 
       for (let i = 0; i < 7; i++) {
         const d = new Date();
-        d.setDate(d.getDate() - i);
+        // FIX (audit #2): UTC arithmetic
+        d.setUTCDate(d.getUTCDate() - i);
         const dateStr = d.toISOString().split('T')[0];
         const heatmapKey = `${this.subredditId}:heatmap:${dateStr}`;
         promises.push(
@@ -206,7 +208,8 @@ export class ModVigilRedis {
       const days: string[] = [];
       for (let i = 0; i < 7; i++) {
         const d = new Date();
-        d.setDate(d.getDate() - i);
+        // FIX (audit #2): UTC arithmetic
+        d.setUTCDate(d.getUTCDate() - i);
         days.push(d.toISOString().split('T')[0]);
       }
       const allModsData = await this.redis.zRange(`${this.subredditId}:mod:all`, 0, -1);
@@ -331,24 +334,66 @@ export class ModVigilRedis {
 
   /**
    * Retrieves recent spike history.
+   * FIX (audit #5): Per-item try/catch so a single corrupted member doesn't crash the dashboard.
    */
   async getSpikeHistory(): Promise<{ timestamp: number; count: number; baseline: number; threshold: number }[]> {
     try {
       const history = await this.redis.zRange(`${this.subredditId}:spike:history`, 0, 4, { reverse: true, by: 'rank' });
-      return history.map(item => JSON.parse(item.member));
+      const out: { timestamp: number; count: number; baseline: number; threshold: number }[] = [];
+      for (const item of history) {
+        try {
+          const parsed = JSON.parse(item.member);
+          if (parsed && typeof parsed === 'object') out.push(parsed);
+        } catch (parseErr) {
+          console.error('[Redis:getSpikeHistory] skipping corrupted entry', parseErr);
+        }
+      }
+      return out;
     } catch (e) {
+      console.error('[Redis:getSpikeHistory]', e);
       return [];
     }
   }
 
   /**
    * Retrieves flagged users (4+ removals).
+   * FIX (audit #1): Reads stable-keyed sorted set + parallel metadata hash.
+   * FIX (audit #5): Per-item try/catch on metadata parse.
    */
   async getFlaggedUsers(): Promise<{ username: string; removals: number; timestamp: number }[]> {
     try {
-      const flagged = await this.redis.zRange(`${this.subredditId}:warn:flagged_users`, 0, 9, { reverse: true, by: 'rank' });
-      return flagged.map(item => JSON.parse(item.member));
+      const ranked = await this.redis.zRange(
+        `${this.subredditId}:warn:flagged_users`,
+        0, 9,
+        { reverse: true, by: 'rank' }
+      );
+      if (ranked.length === 0) return [];
+      const metaHash = await this.redis.hGetAll(`${this.subredditId}:warn:flagged_meta`);
+      const out: { username: string; removals: number; timestamp: number }[] = [];
+      for (const item of ranked) {
+        const raw = metaHash[item.member];
+        if (!raw) {
+          // No metadata — fall back to score (which is the removal count)
+          out.push({ username: item.member, removals: safeInt(item.score.toString()), timestamp: 0 });
+          continue;
+        }
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object') {
+            out.push({
+              username: typeof parsed.username === 'string' ? parsed.username : item.member,
+              removals: safeInt(String(parsed.removals ?? item.score)),
+              timestamp: safeInt(String(parsed.timestamp ?? 0)),
+            });
+          }
+        } catch (parseErr) {
+          console.error('[Redis:getFlaggedUsers] skipping corrupted metadata for', item.member, parseErr);
+          out.push({ username: item.member, removals: safeInt(item.score.toString()), timestamp: 0 });
+        }
+      }
+      return out;
     } catch (e) {
+      console.error('[Redis:getFlaggedUsers]', e);
       return [];
     }
   }
@@ -366,6 +411,36 @@ export class ModVigilRedis {
         .sort((a, b) => b.count - a.count);
     } catch (error) {
       console.error('❌ [ModVigil Redis] Error getting top removal reasons:', error);
+      return [];
+    }
+  }
+
+  /**
+   * FIX (audit #4): Aggregates removal reasons over a 7-day window so the weekly
+   * digest reflects the actual top reason of the week, not just today.
+   */
+  async getTopRemovalReasons7d(): Promise<{ reason: string; count: number }[]> {
+    try {
+      const dates: string[] = [];
+      for (let i = 0; i < 7; i++) {
+        const d = new Date();
+        d.setUTCDate(d.getUTCDate() - i);
+        dates.push(d.toISOString().split('T')[0]);
+      }
+      const hashes = await Promise.all(
+        dates.map(d => this.redis.hGetAll(`${this.subredditId}:actions:reasons:${d}`))
+      );
+      const merged: Record<string, number> = {};
+      for (const h of hashes) {
+        for (const [reason, count] of Object.entries(h)) {
+          merged[reason] = (merged[reason] ?? 0) + safeInt(count);
+        }
+      }
+      return Object.entries(merged)
+        .map(([reason, count]) => ({ reason, count }))
+        .sort((a, b) => b.count - a.count);
+    } catch (error) {
+      console.error('❌ [ModVigil Redis] Error getting 7d top removal reasons:', error);
       return [];
     }
   }
@@ -529,7 +604,8 @@ export class ModVigilRedis {
       const days: string[] = [];
       for (let i = 0; i < 7; i++) {
         const d = new Date();
-        d.setDate(d.getDate() - i);
+        // FIX (audit #2): UTC arithmetic
+        d.setUTCDate(d.getUTCDate() - i);
         days.push(d.toISOString().split('T')[0]);
       }
       const allModsData = await this.redis.zRange(`${this.subredditId}:mod:all`, 0, -1);
@@ -593,7 +669,8 @@ export class ModVigilRedis {
         const arr: string[] = [];
         for (let i = 0; i < 7; i++) {
           const d = new Date();
-          d.setDate(d.getDate() - (i + offsetDays));
+          // FIX (audit #2): UTC arithmetic
+          d.setUTCDate(d.getUTCDate() - (i + offsetDays));
           arr.push(d.toISOString().split('T')[0]);
         }
         return arr;
@@ -668,7 +745,8 @@ export class ModVigilRedis {
 
       for (let i = 0; i < 7; i++) {
         const d = new Date();
-        d.setDate(d.getDate() - i);
+        // FIX (audit #2): UTC arithmetic
+        d.setUTCDate(d.getUTCDate() - i);
         const ds = d.toISOString().split('T')[0];
         ops.push(this.redis.del(`${this.subredditId}:actions:total:${ds}`));
         ops.push(this.redis.del(`${this.subredditId}:heatmap:${ds}`));
@@ -683,7 +761,8 @@ export class ModVigilRedis {
       // Phase 2: also clear the prior-period aggregates seeded by demo data
       for (let i = 0; i < 7; i++) {
         const d = new Date();
-        d.setDate(d.getDate() - (i + 28));
+        // FIX (audit #2): UTC arithmetic
+        d.setUTCDate(d.getUTCDate() - (i + 28));
         const ds = d.toISOString().split('T')[0];
         ops.push(this.redis.del(`${this.subredditId}:actions:total:${ds}`));
         ops.push(this.redis.del(`${this.subredditId}:actions:approvals:${ds}`));

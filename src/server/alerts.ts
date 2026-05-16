@@ -28,7 +28,8 @@ export async function updateBaseline(_event: unknown, context: ScheduledJobConte
       Array.from({ length: 7 }, (_, idx) => {
         const i = idx + 1;
         const pastDate = new Date(now);
-        pastDate.setDate(now.getDate() - i * 7);
+        // FIX (audit #2): UTC arithmetic so the lookback date matches the UTC-keyed action buckets
+        pastDate.setUTCDate(now.getUTCDate() - i * 7);
         const dateStr = pastDate.toISOString().split('T')[0];
         const actionKey = `${subredditId}:actions:${dateStr}:${hourStr}`;
         return context.redis.zCard(actionKey);

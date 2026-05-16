@@ -203,7 +203,8 @@ async function collectStats(db: ModVigilRedis): Promise<PatternStats> {
   const dates: string[] = [];
   for (let i = 0; i < 7; i++) {
     const d = new Date();
-    d.setDate(d.getDate() - i);
+    // FIX (audit #2): UTC arithmetic to match UTC date string output
+    d.setUTCDate(d.getUTCDate() - i);
     dates.push(d.toISOString().split('T')[0]);
   }
   const totals = await Promise.all(dates.map(d => db.getDailyTotals(d)));

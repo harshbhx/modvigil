@@ -57,11 +57,20 @@ Please take this time to review the rules and ensure you are following them.`;
       // (This flag will show up in the dashboard)
       const flagKey = `warn:flagged:${context.subredditId}:${sanitizedUserId}`;
       await context.redis.set(flagKey, 'true');
-      
-      // NEW: Add to a set so we can list them in the dashboard
-      const flaggedUserStr = JSON.stringify({ username: userId, removals: removalCount, timestamp: Date.now() });
-      await context.redis.zAdd(`${context.subredditId}:warn:flagged_users`, { member: flaggedUserStr, score: Date.now() });
-      
+
+      // FIX (audit #1): use stable member (sanitizedUserId) so the same user can't appear
+      // multiple times in the dashboard. Score = latest removal count for ranking.
+      // Metadata (raw username + timestamp) lives in a parallel hash so we don't lose it.
+      const meta = JSON.stringify({ username: userId, removals: removalCount, timestamp: Date.now() });
+      await context.redis.zAdd(
+        `${context.subredditId}:warn:flagged_users`,
+        { member: sanitizedUserId, score: removalCount }
+      );
+      await context.redis.hSet(
+        `${context.subredditId}:warn:flagged_meta`,
+        { [sanitizedUserId]: meta }
+      );
+
       console.log(`🚩 [ModVigil Warnings] User ${sanitizedUserId} flagged for manual mod review.`);
       return;
     }
