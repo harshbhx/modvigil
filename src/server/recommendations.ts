@@ -25,7 +25,6 @@ export interface RecommendationsInput {
   totalActions7d: number;
   modCount: number;
   topRemovalReasons: { reason: string; count: number }[];
-  totalRemovals7d: number;
 }
 
 export async function buildRecommendations(

@@ -27,9 +27,10 @@ function safeFloat(s: string | undefined | null): number {
  * the reschedule still runs if Reddit API throws on resolve.
  */
 export async function updateBaseline(_event: unknown, context: ScheduledJobContext): Promise<void> {
+  let subredditId = '';
   try {
     const subreddit = await context.reddit.getCurrentSubreddit();
-    const subredditId = subreddit.id;
+    subredditId = subreddit.id;
     const now = new Date();
     const dayOfWeek = now.getUTCDay(); // 0 = Sun, 6 = Sat — matches schema and raidPrediction.ts
     const hour = now.getUTCHours();
@@ -77,10 +78,12 @@ export async function updateBaseline(_event: unknown, context: ScheduledJobConte
   } finally {
     // FIX #29: Reschedule in its own try/catch so a failure here doesn't silently kill the job
     try {
-      await context.scheduler.runJob({
+      const newJobId = await context.scheduler.runJob({
         name: 'baselineUpdater',
         runAt: new Date(Date.now() + 60 * 60 * 1000), // 1 hour
       });
+      // Update stored job ID so AppUpgrade can cancel the correct job
+      await context.redis.set(`${subredditId}:meta:jobIds:baselineUpdater`, newJobId);
     } catch (schedErr) {
       console.error('❌ [ModVigil Alerts] Failed to reschedule baselineUpdater:', schedErr);
     }
@@ -95,9 +98,10 @@ export async function updateBaseline(_event: unknown, context: ScheduledJobConte
  * AUDIT FIX: All work inside try block; safeFloat/safeInt prevent NaN math.
  */
 export async function checkForSpike(_event: unknown, context: ScheduledJobContext): Promise<void> {
+  let subredditId = '';
   try {
     const subreddit = await context.reddit.getCurrentSubreddit();
-    const subredditId = subreddit.id;
+    subredditId = subreddit.id;
     const db = new ModVigilRedis(context.redis, subredditId);
     const now = new Date();
     const dayOfWeek = now.getUTCDay(); // 0 = Sun, 6 = Sat — matches schema and raidPrediction.ts
@@ -178,8 +182,9 @@ This could indicate a raid, a highly controversial post, or an influx of rule-br
         threshold,
       });
       await context.redis.zAdd(`${subredditId}:spike:history`, { member: spikeData, score: Date.now() });
-      // FIX: cap history set at 100 entries to prevent unbounded growth
-      await context.redis.zRemRangeByRank(`${subredditId}:spike:history`, 0, -101); // keep last 100
+      // cap history set at 100 entries and set a 90-day TTL so the key never accumulates forever
+      await context.redis.zRemRangeByRank(`${subredditId}:spike:history`, 0, -101);
+      await context.redis.expire(`${subredditId}:spike:history`, 60 * 60 * 24 * 90);
       await context.redis.incrBy(`${subredditId}:stats:spike_alerts`, 1);
     }
   } catch (error) {
@@ -187,10 +192,12 @@ This could indicate a raid, a highly controversial post, or an influx of rule-br
   } finally {
     // FIX #29: Reschedule in its own try/catch so a failure here doesn't silently kill the job
     try {
-      await context.scheduler.runJob({
+      const newJobId = await context.scheduler.runJob({
         name: 'spikeChecker',
         runAt: new Date(Date.now() + 15 * 60 * 1000), // 15 minutes
       });
+      // Update stored job ID so AppUpgrade can cancel the correct job
+      await context.redis.set(`${subredditId}:meta:jobIds:spikeChecker`, newJobId);
     } catch (schedErr) {
       console.error('❌ [ModVigil Alerts] Failed to reschedule spikeChecker:', schedErr);
     }

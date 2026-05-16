@@ -269,6 +269,7 @@ export const App: React.FC = () => {
       window.removeEventListener('message', handleMessage);
       retryTimeouts.forEach(t => clearTimeout(t));
       clearTimeout(hardTimeout);
+      if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
     };
   }, []);
 
@@ -416,8 +417,8 @@ export const App: React.FC = () => {
           {/* FIX 1: Demo button always visible in header so judges can load data on cold install */}
           <button
             onClick={() => {
+              // DEMO_DATA_SUCCESS handler already fires GET_DASHBOARD_DATA — no duplicate needed
               window.parent.postMessage({ type: 'POPULATE_DEMO_DATA' }, '*');
-              setTimeout(() => window.parent.postMessage({ type: 'GET_DASHBOARD_DATA' }, '*'), 2000);
             }}
             style={{
               fontSize: '11px',

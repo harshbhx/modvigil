@@ -86,7 +86,7 @@ export const Heatmap: React.FC<HeatmapProps> = ({ data, title }) => {
         ))}
 
         <g transform={`translate(${paddingLeft}, ${height - 25})`}>
-          <text x="-10" y="10" fontSize="10" fontWeight="bold" fill="var(--color-neutral-content-weak)" textAnchor="end">Quiet</text>
+          <text x="-10" y="10" fontSize="10" fontWeight="bold" fill="var(--color-neutral-content-weak)" textAnchor="end">Gap</text>
           {[0, 0.25, 0.5, 0.75, 1].map((p, i) => (
             <rect key={i} x={i * 25} y={0} width={22} height={12} fill={getColor(maxValue * p)} rx="2" />
           ))}

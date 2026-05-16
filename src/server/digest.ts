@@ -13,9 +13,10 @@ import { ModVigilRedis } from './redis.js';
  * the reschedule still runs if Reddit API throws on resolve.
  */
 export async function generateWeeklyDigest(_event: unknown, context: ScheduledJobContext): Promise<void> {
+  let subredditId = '';
   try {
     const subreddit = await context.reddit.getCurrentSubreddit();
-    const subredditId = subreddit.id;
+    subredditId = subreddit.id;
     const subredditName = subreddit.name;
     const db = new ModVigilRedis(context.redis, subredditId);
 
@@ -146,10 +147,12 @@ export async function generateWeeklyDigest(_event: unknown, context: ScheduledJo
   } finally {
     // FIX #29: Reschedule in its own try/catch
     try {
-      await context.scheduler.runJob({
+      const newJobId = await context.scheduler.runJob({
         name: 'weeklyDigest',
         runAt: getNextMonday9amUTC(),
       });
+      // Update stored job ID so AppUpgrade can cancel the correct job
+      await context.redis.set(`${subredditId}:meta:jobIds:weeklyDigest`, newJobId);
     } catch (schedErr) {
       console.error('❌ [ModVigil Digest] Failed to reschedule weeklyDigest:', schedErr);
     }

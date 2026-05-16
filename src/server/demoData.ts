@@ -219,43 +219,38 @@ async function seedDemoStats(redis: ModVigilRedis, _subredditId: string): Promis
  */
 async function seedRecentActions(redis: ModVigilRedis): Promise<void> {
   const nowSec = Math.floor(Date.now() / 1000);
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const hourStr = String(new Date().getUTCHours()).padStart(2, '0');
 
-  // FIX: 22 actions within last 4 minutes (one every 10s) → absolute volume ≥15 (+15pts)
+  // 22 actions within last 4 minutes (one every 10s) → absolute volume ≥15 (+15pts)
   // + 3 actions 15-18 min ago → acceleration 22/3 = 7x (+30pts) → score ≥ 60 (ALERT badge)
+  //
+  // FIX: removed the hour/date guard that was silently dropping the 3 prev15min actions
+  // when they fell in a different hour bucket (e.g. at 00:05 UTC the 15-18 min ago actions
+  // are in 23:xx of the previous day). recordAction() already routes each action to the
+  // correct bucket based on its own timestamp, and getActionCountInWindow() queries across
+  // bucket boundaries — so the guard was wrong and caused NORMAL score in demo mode near
+  // hour boundaries.
   const ops: Promise<void>[] = [];
   for (let i = 0; i < 22; i++) {
     const actionSec = nowSec - (i * 10); // one action every 10 seconds, all within last ~4 min
-    const actionData: ActionRecord = {
+    ops.push(redis.recordAction({
       action: i % 3 === 0 ? 'removelink' : i % 3 === 1 ? 'approvelink' : 'removecomment',
       moderator: { name: 'ModChampion' },
       targetUser: `demo_user_${i}`,
       targetPost: `t3_demo_recent_${i}`,
       timestamp: actionSec * 1000,
-    };
-    const actionHour = new Date(actionSec * 1000).getUTCHours();
-    const actionDate = new Date(actionSec * 1000).toISOString().slice(0, 10);
-    if (actionDate === todayStr && String(actionHour).padStart(2, '0') === hourStr) {
-      ops.push(redis.recordAction(actionData));
-    }
+    }));
   }
 
   // 3 actions 15-18 min ago so the acceleration signal fires (prev15min > 0)
   for (let i = 0; i < 3; i++) {
     const actionSec = nowSec - 900 - (i * 60); // 15-18 min ago
-    const actionData: ActionRecord = {
+    ops.push(redis.recordAction({
       action: 'removelink',
       moderator: { name: 'ModChampion' },
       targetUser: `demo_prev_user_${i}`,
       targetPost: `t3_demo_prev_${i}`,
       timestamp: actionSec * 1000,
-    };
-    const actionHour = new Date(actionSec * 1000).getUTCHours();
-    const actionDate = new Date(actionSec * 1000).toISOString().slice(0, 10);
-    if (actionDate === todayStr && String(actionHour).padStart(2, '0') === hourStr) {
-      ops.push(redis.recordAction(actionData));
-    }
+    }));
   }
 
   await Promise.all(ops);
