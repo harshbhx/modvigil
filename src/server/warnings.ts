@@ -55,12 +55,11 @@ Please take this time to review the rules and ensure you are following them.`;
     } else if (removalCount >= 4) {
       // For 4+ removals, we don't send a message but we flag them for mod review
       // (This flag will show up in the dashboard)
-      const flagKey = `warn:flagged:${context.subredditId}:${sanitizedUserId}`;
-      await context.redis.set(flagKey, 'true');
-
       // FIX (audit #1): use stable member (sanitizedUserId) so the same user can't appear
       // multiple times in the dashboard. Score = latest removal count for ranking.
       // Metadata (raw username + timestamp) lives in a parallel hash so we don't lose it.
+      // FIX: removed dead write to warn:flagged:* — that key is never read; flagged_users
+      // sorted set + flagged_meta hash are the canonical store read by getFlaggedUsers().
       const meta = JSON.stringify({ username: userId, removals: removalCount, timestamp: Date.now() });
       await context.redis.zAdd(
         `${context.subredditId}:warn:flagged_users`,
@@ -70,6 +69,9 @@ Please take this time to review the rules and ensure you are following them.`;
         `${context.subredditId}:warn:flagged_meta`,
         { [sanitizedUserId]: meta }
       );
+      // FIX: add 30-day TTL so flagged-user data doesn't accumulate forever
+      await context.redis.expire(`${context.subredditId}:warn:flagged_users`, 2592000);
+      await context.redis.expire(`${context.subredditId}:warn:flagged_meta`, 2592000);
 
       console.log(`🚩 [ModVigil Warnings] User ${sanitizedUserId} flagged for manual mod review.`);
       return;
@@ -78,15 +80,17 @@ Please take this time to review the rules and ensure you are following them.`;
     if (subject && message) {
       console.log(`✉️ [ModVigil Warnings] Sending warning ${removalCount} to user ${sanitizedUserId}`);
 
+      // FIX: set cooldown BEFORE sending PM to prevent duplicate sends under
+      // concurrent triggers — both would pass the cooldown check if we set it after.
+      await context.redis.set(lastSentKey, Date.now().toString(), {
+        expiration: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
+      });
+
       // Use original userId for Reddit API (expects original username)
       await context.reddit.sendPrivateMessage({
         to: userId,
         subject: subject,
         text: message
-      });
-
-      await context.redis.set(lastSentKey, Date.now().toString(), {
-        expiration: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
       });
 
       // NEW: Track stat for Time Savings Calculator

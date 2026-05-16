@@ -1,6 +1,6 @@
 /** @jsxRuntime classic */
 /** @jsx React.createElement */
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -16,19 +16,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, currentSe
   const [transparencyMode, setTransparencyMode] = useState(currentSettings.transparencyMode);
   const [enableWarnings, setEnableWarnings] = useState(currentSettings.enableWarnings);
   const [saved, setSaved] = useState(false);
+  // FIX 12: hold latest onClose in a ref so the effect never needs it as a dep
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   React.useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (event.data?.type === 'SETTINGS_SAVED') {
         setSaved(true);
         setTimeout(() => {
-          onClose();
+          onCloseRef.current();
         }, 1500);
       }
     };
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [onClose]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // empty deps — onCloseRef.current always has the latest value
 
   const handleSave = () => {
     // Send settings to server via postMessage

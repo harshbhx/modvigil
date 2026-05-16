@@ -1,6 +1,6 @@
 /** @jsxRuntime classic */
 /** @jsx React.createElement */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { BarChart } from './Charts.js';
 import { Heatmap } from './Heatmap.js';
 import { Leaderboard } from './Leaderboard.js';
@@ -22,6 +22,8 @@ interface DashboardData {
   leaderboard: { username: string; count: number }[];
   healthScore: number;
   ghostMods: { username: string; lastActiveDays: number }[];
+  // FIX 9: lastActionAt added so the field from the server payload isn't silently dropped
+  lastActionAt?: number;
   totalActionsToday: number;
   approvalRate: number;
   topRemovalReason: string | null;
@@ -47,6 +49,57 @@ interface DashboardData {
 
 const SYSTEM_FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
 
+// FIX 2: CSS custom properties extracted as a constant so they render in ALL
+// branches (loading, error, !data, and main). Previously they were only inside
+// the data !== null branch, so var(--color-*) resolved to nothing during load.
+const CSS_VARS_STYLE = `
+  :root {
+    --color-primary: #FF4500;
+    --color-primary-hover: #FF5722;
+    --color-neutral-background: #DAE0E6;
+    --color-neutral-background-weak: #F6F7F8;
+    --color-neutral-background-strong: #FFFFFF;
+    --color-neutral-border: #EDEFF1;
+    --color-neutral-content: #1A1A1B;
+    --color-neutral-content-weak: #878A8C;
+    --color-success: #46D160;
+    --color-warning: #FFB000;
+    --color-danger: #EA0027;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --color-primary: #FF4500;
+      --color-primary-hover: #FF5722;
+      --color-neutral-background: #030303;
+      --color-neutral-background-weak: #1A1A1B;
+      --color-neutral-background-strong: #272729;
+      --color-neutral-border: #343536;
+      --color-neutral-content: #D7DADC;
+      --color-neutral-content-weak: #818384;
+      --color-success: #46D160;
+      --color-warning: #FFB000;
+      --color-danger: #EA0027;
+    }
+  }
+  @keyframes pulse {
+    0% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.8); }
+    100% { opacity: 1; transform: scale(1); }
+  }
+  @media (max-width: 768px) {
+    body { font-size: 14px; }
+    [style*="grid-template-columns"] { grid-template-columns: 1fr !important; }
+    header { padding: 16px !important; flex-direction: column !important; align-items: flex-start !important; gap: 12px; }
+    h1 { font-size: 22px !important; }
+    section { padding: 16px !important; }
+    svg { max-width: 100%; height: auto; }
+  }
+  @media (max-width: 480px) {
+    h1 { font-size: 18px !important; }
+    [style*="padding: 24px"] { padding: 12px !important; }
+  }
+`;
+
 export const App: React.FC = () => {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -57,6 +110,8 @@ export const App: React.FC = () => {
   const [toast, setToast] = useState<string | null>(null);
   // FIX #33: Live "updated X seconds ago" timestamp
   const [updatedAt, setUpdatedAt] = useState<number>(Date.now());
+  // FIX 4: ref to hold the retry hard-timeout so it can be cleared/reset
+  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showToast = (msg: string, durationMs = 4000) => {
     setToast(msg);
@@ -176,7 +231,7 @@ export const App: React.FC = () => {
         setError('Dashboard request timed out after 4 attempts. Please refresh.');
         setLoading(false);
       }
-    }, 10000);
+    }, 12000);
 
     requestData();
     window.addEventListener('message', handleMessage);
@@ -190,8 +245,8 @@ export const App: React.FC = () => {
   // FIX #33: Rerender footer timestamp every 10 seconds
   useEffect(() => {
     const interval = setInterval(() => {
-      // Force re-render to update "X seconds ago"
-      setUpdatedAt(prev => prev);
+      // FIX 1: Use Date.now() so state actually changes and triggers re-render
+      setUpdatedAt(Date.now());
     }, 10000);
     return () => clearInterval(interval);
   }, []);
@@ -199,6 +254,8 @@ export const App: React.FC = () => {
   if (loading) {
     return (
       <div style={{ padding: '24px', fontFamily: SYSTEM_FONT, backgroundColor: 'var(--color-neutral-background)', minHeight: '100vh' }}>
+        {/* FIX 2: CSS vars must be present in every branch */}
+        <style>{CSS_VARS_STYLE}</style>
         <div style={{ marginBottom: '24px', backgroundColor: 'var(--color-neutral-background-strong)', padding: '20px 30px', borderRadius: '16px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', border: '1px solid var(--color-neutral-border)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ flex: 1 }}>
@@ -239,12 +296,24 @@ export const App: React.FC = () => {
   if (error) {
     return (
       <div style={{ padding: '40px', textAlign: 'center', fontFamily: SYSTEM_FONT, backgroundColor: 'var(--color-neutral-background)', minHeight: '100vh' }}>
+        {/* FIX 2: CSS vars must be present in every branch */}
+        <style>{CSS_VARS_STYLE}</style>
         <div style={{ backgroundColor: 'var(--color-neutral-background-strong)', padding: '40px', borderRadius: '16px', boxShadow: '0 8px 16px rgba(0,0,0,0.1)', maxWidth: '600px', margin: '0 auto', border: '1px solid var(--color-neutral-border)' }}>
           <div style={{ fontSize: '48px', marginBottom: '20px' }}>⚠️</div>
           <h2 style={{ color: 'var(--color-primary)', fontWeight: '900', fontSize: '28px' }}>Error Loading Dashboard</h2>
           <p style={{ color: 'var(--color-neutral-content-weak)', lineHeight: '1.6', fontSize: '16px' }}>{error}</p>
           <button
-            onClick={() => { setError(null); setLoading(true); window.parent.postMessage({ type: 'GET_DASHBOARD_DATA' }, '*'); }}
+            onClick={() => {
+              // FIX 4: Clear any existing timeout and arm a new 12s hard timeout for the retry
+              if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
+              setError(null);
+              setLoading(true);
+              window.parent.postMessage({ type: 'GET_DASHBOARD_DATA' }, '*');
+              retryTimeoutRef.current = setTimeout(() => {
+                setError('Dashboard timed out. Close and reopen.');
+                setLoading(false);
+              }, 12000);
+            }}
             style={{ marginTop: '20px', padding: '12px 24px', backgroundColor: 'var(--color-primary)', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: 'bold', cursor: 'pointer' }}
           >
             Retry
@@ -257,6 +326,8 @@ export const App: React.FC = () => {
   if (!data) {
     return (
       <div style={{ padding: '40px', textAlign: 'center', fontFamily: SYSTEM_FONT, backgroundColor: 'var(--color-neutral-background)', minHeight: '100vh' }}>
+        {/* FIX 2: CSS vars must be present in every branch */}
+        <style>{CSS_VARS_STYLE}</style>
         <div style={{ backgroundColor: 'var(--color-neutral-background-strong)', padding: '40px', borderRadius: '16px', boxShadow: '0 8px 16px rgba(0,0,0,0.1)', maxWidth: '600px', margin: '0 auto', border: '1px solid var(--color-neutral-border)' }}>
           <div style={{ fontSize: '48px', marginBottom: '20px' }}>📡</div>
           <h2 style={{ color: 'var(--color-primary)', fontWeight: '900', fontSize: '28px' }}>Radar Offline</h2>
@@ -416,53 +487,8 @@ export const App: React.FC = () => {
         </div>
       )}
 
-      <style>{`
-        :root {
-          --color-primary: #FF4500;
-          --color-primary-hover: #FF5722;
-          --color-neutral-background: #DAE0E6;
-          --color-neutral-background-weak: #F6F7F8;
-          --color-neutral-background-strong: #FFFFFF;
-          --color-neutral-border: #EDEFF1;
-          --color-neutral-content: #1A1A1B;
-          --color-neutral-content-weak: #878A8C;
-          --color-success: #46D160;
-          --color-warning: #FFB000;
-          --color-danger: #EA0027;
-        }
-        @media (prefers-color-scheme: dark) {
-          :root {
-            --color-primary: #FF4500;
-            --color-primary-hover: #FF5722;
-            --color-neutral-background: #030303;
-            --color-neutral-background-weak: #1A1A1B;
-            --color-neutral-background-strong: #272729;
-            --color-neutral-border: #343536;
-            --color-neutral-content: #D7DADC;
-            --color-neutral-content-weak: #818384;
-            --color-success: #46D160;
-            --color-warning: #FFB000;
-            --color-danger: #EA0027;
-          }
-        }
-        @keyframes pulse {
-          0% { opacity: 1; transform: scale(1); }
-          50% { opacity: 0.4; transform: scale(0.8); }
-          100% { opacity: 1; transform: scale(1); }
-        }
-        @media (max-width: 768px) {
-          body { font-size: 14px; }
-          [style*="grid-template-columns"] { grid-template-columns: 1fr !important; }
-          header { padding: 16px !important; flex-direction: column !important; align-items: flex-start !important; gap: 12px; }
-          h1 { font-size: 22px !important; }
-          section { padding: 16px !important; }
-          svg { max-width: 100%; height: auto; }
-        }
-        @media (max-width: 480px) {
-          h1 { font-size: 18px !important; }
-          [style*="padding: 24px"] { padding: 12px !important; }
-        }
-      `}</style>
+      {/* FIX 2: CSS vars rendered via shared constant (also present in loading/error branches) */}
+      <style>{CSS_VARS_STYLE}</style>
     </div>
   );
 };

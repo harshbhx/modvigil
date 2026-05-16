@@ -174,6 +174,8 @@ This could indicate a raid, a highly controversial post, or an influx of rule-br
         threshold,
       });
       await context.redis.zAdd(`${subredditId}:spike:history`, { member: spikeData, score: Date.now() });
+      // FIX: cap history set at 100 entries to prevent unbounded growth
+      await context.redis.zRemRangeByRank(`${subredditId}:spike:history`, 0, -101); // keep last 100
       await context.redis.incrBy(`${subredditId}:stats:spike_alerts`, 1);
     }
   } catch (error) {

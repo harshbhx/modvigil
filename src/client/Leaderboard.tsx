@@ -16,7 +16,20 @@ interface LeaderboardProps {
  * Includes relative activity bars and high-contrast styling.
  */
 export const Leaderboard: React.FC<LeaderboardProps> = ({ data }) => {
-  const maxActions = data.length > 0 ? Math.max(...data.map(m => m.count)) : 1;
+  // FIX 8: empty state instead of blank space
+  if (!data || data.length === 0) {
+    return (
+      <div className="leaderboard">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+          <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 'bold', color: 'var(--color-neutral-content-weak)', textTransform: 'uppercase', letterSpacing: '1px' }}>Top Moderators (7 Days)</h3>
+          <div style={{ fontSize: '11px', color: 'var(--color-neutral-content-weak)' }}>Verified Actions</div>
+        </div>
+        <div style={{ padding: '16px', color: 'var(--color-neutral-content-weak)', textAlign: 'center' }}>No moderator activity yet</div>
+      </div>
+    );
+  }
+
+  const maxActions = Math.max(...data.map(m => m.count));
 
   return (
     <div className="leaderboard">

@@ -8,6 +8,7 @@ interface HealthScoreProps {
 
 export const HealthScore: React.FC<HealthScoreProps> = ({ score }) => {
   const getStatusColor = (s: number) => {
+    if (s === 0) return '#878A8C'; // FIX 5b: neutral gray for no-data state
     if (s >= 90) return 'var(--color-success)'; // Green
     if (s >= 70) return 'var(--color-warning)'; // Yellow
     return 'var(--color-primary)'; // Orange/Red
@@ -56,7 +57,8 @@ export const HealthScore: React.FC<HealthScoreProps> = ({ score }) => {
       </div>
       <div>
         <div style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--color-neutral-content-weak)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Subreddit Health</div>
-        <div style={{ fontSize: '18px', fontWeight: '900', color }}>{score >= 85 ? 'ELITE' : score >= 70 ? 'STABLE' : 'CRITICAL'}</div>
+        {/* FIX 5a: ELITE threshold 90 (was 85), score=0 shows AWAITING DATA */}
+        <div style={{ fontSize: '18px', fontWeight: '900', color }}>{score === 0 ? 'AWAITING DATA' : score >= 90 ? 'ELITE' : score >= 70 ? 'STABLE' : 'CRITICAL'}</div>
         <div style={{ fontSize: '11px', color: 'var(--color-neutral-content-weak)', display: 'flex', alignItems: 'center', gap: '4px' }}>
           <span style={{ color: score >= 70 ? 'var(--color-success)' : 'var(--color-primary)' }}>{score >= 70 ? '▲' : '▼'}</span> 
           {score >= 70 ? 'Improving coverage' : 'Coverage gaps detected'}

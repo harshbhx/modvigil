@@ -18,6 +18,18 @@ interface BarChartProps {
  * High fidelity, animated, and interactive.
  */
 export const BarChart: React.FC<BarChartProps> = ({ data, title, color = 'var(--color-primary)' }) => {
+  // FIX 9: empty state
+  if (!data || data.length === 0) {
+    return (
+      <div className="chart-container">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+          <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 'bold', color: 'var(--color-neutral-content-weak)', textTransform: 'uppercase', letterSpacing: '1px' }}>{title}</h3>
+        </div>
+        <div style={{ padding: '16px', color: 'var(--color-neutral-content-weak)', textAlign: 'center' }}>No activity data yet</div>
+      </div>
+    );
+  }
+
   const width = 450;
   const height = 240;
   const paddingX = 40;
@@ -32,8 +44,8 @@ export const BarChart: React.FC<BarChartProps> = ({ data, title, color = 'var(--
   return (
     <div className="chart-container">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+        {/* FIX 7: removed duplicate <div>{title}</div> that was rendering the title twice */}
         <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 'bold', color: 'var(--color-neutral-content-weak)', textTransform: 'uppercase', letterSpacing: '1px' }}>{title}</h3>
-        <div style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--color-primary)' }}>{title}</div>
       </div>
       <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} style={{ background: 'var(--color-neutral-background-strong)', borderRadius: '12px' }}>
         <style>{`

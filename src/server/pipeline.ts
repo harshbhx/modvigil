@@ -94,7 +94,8 @@ export async function handleModAction(
     }
 
     // --- USER WARNING LOGIC ---
-    const removalActions = ['removelink', 'removecomment', 'spamlink', 'spamcomment'];
+    // FIX: added 'banuser' — bans are removals and should trigger the warning counter
+    const removalActions = ['removelink', 'removecomment', 'spamlink', 'spamcomment', 'banuser'];
     const isRemoval = removalActions.includes(action.toLowerCase());
 
     if (isRemoval && isValidUser(rawTargetAuthor)) {

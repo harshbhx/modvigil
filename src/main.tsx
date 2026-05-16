@@ -27,7 +27,8 @@ Devvit.configure({
 function getNextMonday9amUTC(): Date {
   const now = new Date();
   const day = now.getUTCDay();
-  const daysUntilMonday = day === 1 ? 7 : (8 - day) % 7;
+  // FIX 8: if today IS Monday but before 9am UTC, use today — not next Monday
+  const daysUntilMonday = day === 1 && now.getUTCHours() < 9 ? 0 : (day === 1 ? 7 : (8 - day) % 7);
   const next = new Date(now);
   next.setUTCDate(now.getUTCDate() + daysUntilMonday);
   next.setUTCHours(9, 0, 0, 0);
@@ -65,21 +66,24 @@ async function requireModerator(
 }
 
 async function scheduleAllJobs(context: { scheduler: { runJob: (opts: { name: string; runAt: Date }) => Promise<string> }; redis: { set: (k: string, v: string) => Promise<unknown>; get: (k: string) => Promise<string | null | undefined> }; subredditId: string }): Promise<void> {
+  // FIX 2: store each job ID immediately after its runJob call so a later
+  // failure can't orphan an already-scheduled job with no stored ID.
   const spikeJobId = await context.scheduler.runJob({
     name: 'spikeChecker',
     runAt: new Date(Date.now() + 60_000),
   });
+  await context.redis.set(`${context.subredditId}:meta:jobIds:spikeChecker`, spikeJobId);
+
   const baselineJobId = await context.scheduler.runJob({
     name: 'baselineUpdater',
     runAt: new Date(Date.now() + 5 * 60_000),
   });
+  await context.redis.set(`${context.subredditId}:meta:jobIds:baselineUpdater`, baselineJobId);
+
   const digestJobId = await context.scheduler.runJob({
     name: 'weeklyDigest',
     runAt: getNextMonday9amUTC(),
   });
-  // Store job IDs so AppUpgrade can cancel them
-  await context.redis.set(`${context.subredditId}:meta:jobIds:spikeChecker`, spikeJobId);
-  await context.redis.set(`${context.subredditId}:meta:jobIds:baselineUpdater`, baselineJobId);
   await context.redis.set(`${context.subredditId}:meta:jobIds:weeklyDigest`, digestJobId);
 }
 
@@ -106,6 +110,14 @@ Devvit.addTrigger({
         return;
       }
       await context.redis.set(installedKey, new Date().toISOString());
+
+      // FIX 7: Cancel any pre-existing jobs on fresh install (handles reinstall scenario)
+      for (const jobName of ['spikeChecker', 'baselineUpdater', 'weeklyDigest']) {
+        try {
+          const existingId = await context.redis.get(`${context.subredditId}:meta:jobIds:${jobName}`);
+          if (existingId) await context.scheduler.cancelJob(existingId);
+        } catch { /* job didn't exist, fine */ }
+      }
 
       // Seed spike detection baseline for all 168 time slots
       const subreddit = await context.reddit.getCurrentSubreddit();
@@ -178,6 +190,10 @@ Devvit.addCustomPostType({
             }
             const message = msg as { type: string; payload?: unknown };
 
+            // FIX 1: top-level try/catch so any unhandled branch error sends ERROR
+            // back to the webview instead of silently crashing the handler.
+            try {
+
             if (message.type === 'GET_DASHBOARD_DATA') {
               const auth = await requireModerator(context);
               if (!auth.ok) {
@@ -189,13 +205,15 @@ Devvit.addCustomPostType({
                 const db = new ModVigilRedis(context.redis, subredditId);
                 const dateStr = new Date().toISOString().split('T')[0];
 
-                const [dailyTotals, heatmapData, leaderboard, healthScore, approvalRate, topReasons, ghostMods, spikeThreshold, transparencyMode, enableWarnings, stats, installDate, modInsights, trend, flaggedUsers, autoModSuggestions] = await Promise.all([
+                const [dailyTotals, heatmapData, leaderboard, healthScore, approvalRate, topReasons, topReasons7d, ghostMods, spikeThreshold, transparencyMode, enableWarnings, stats, installDate, modInsights, trend, flaggedUsers, autoModSuggestions] = await Promise.all([
                   db.getLast7DaysTotals(),
                   db.getHeatmapData(),
                   db.getLeaderboard7d(),
                   db.getHealthScore(),
                   db.getApprovalRate(dateStr),
                   db.getTopRemovalReasons(dateStr),
+                  // FIX: use 7-day aggregate for AutoMod candidate check so totalRemovals >= 10 fires realistically
+                  db.getTopRemovalReasons7d(),
                   db.getGhostMods(context.reddit as unknown as Parameters<typeof db.getGhostMods>[0], auth.subreddit.name),
                   db.getSetting('spikeThreshold', 3.0),
                   db.getSetting('transparencyMode', false),
@@ -212,15 +230,9 @@ Devvit.addCustomPostType({
                 const totalActionsToday = Object.values(todayTotals).reduce((sum, v) => sum + (parseInt(v, 10) || 0), 0);
                 const topRemovalReason = topReasons.length > 0 ? topReasons[0].reason : null;
 
-                // Live mod team size for "actions per mod" recommendation.
-                // AUDIT FIX: stream the listing instead of .all() to avoid ServerCallRequired.
-                let modCount = 0;
-                try {
-                  const live = context.reddit.getModerators({ subredditName: auth.subreddit.name });
-                  for await (const _m of live) modCount++;
-                } catch (e) {
-                  console.error('[main:GET_DASHBOARD_DATA] mod count fetch failed:', e);
-                }
+                // FIX 3: derive mod count from already-fetched data — avoids a second
+                // full mod-listing stream that duplicates the one inside getGhostMods().
+                const modCount = Math.max(leaderboard.length + ghostMods.length, 1);
 
                 const totalActions7d = dailyTotals.reduce((s, d) => s + d.value, 0);
                 const recommendations = await buildRecommendations(db, dateStr, {
@@ -230,8 +242,24 @@ Devvit.addCustomPostType({
                   flaggedUserCount: flaggedUsers.length,
                   totalActions7d,
                   modCount,
-                  topRemovalReasons: topReasons,
+                  // FIX: pass 7-day aggregate so AutoMod candidate threshold (>=10 removals) fires realistically
+                  topRemovalReasons: topReasons7d,
                 });
+
+                // FIX 4: compute lastActionAt from mod:lastactive Redis keys for
+                // leaderboard members instead of hardcoding 0.
+                let lastActionAt = 0;
+                if (leaderboard.length > 0) {
+                  const lastActiveTimes = await Promise.all(
+                    leaderboard.map(m => context.redis.get(`${subredditId}:mod:lastactive:${m.username}`))
+                  );
+                  for (const t of lastActiveTimes) {
+                    if (t) {
+                      const ms = parseInt(t, 10);
+                      if (!isNaN(ms) && ms > lastActionAt) lastActionAt = ms;
+                    }
+                  }
+                }
 
                 context.ui.webView.postMessage('modvigil-webview', {
                   type: 'DASHBOARD_DATA',
@@ -241,7 +269,7 @@ Devvit.addCustomPostType({
                     leaderboard,
                     healthScore,
                     ghostMods,
-                    lastActionAt: 0,
+                    lastActionAt,
                     totalActionsToday,
                     approvalRate,
                     topRemovalReason,
@@ -261,9 +289,7 @@ Devvit.addCustomPostType({
                 console.error('❌ [ModVigil] Error fetching dashboard data:', error);
                 context.ui.webView.postMessage('modvigil-webview', { type: 'ERROR', payload: { message: 'Failed to load dashboard data' } });
               }
-            }
-
-            if (message.type === 'NUDGE_GHOST_MODS') {
+            } else if (message.type === 'NUDGE_GHOST_MODS') {
               const auth = await requireModerator(context);
               if (!auth.ok) {
                 context.ui.webView.postMessage('modvigil-webview', { type: 'ERROR', payload: { message: 'Access denied: Moderators only' } });
@@ -301,9 +327,7 @@ Devvit.addCustomPostType({
                 console.error('❌ [ModVigil] Error nudging ghost mods:', error);
                 context.ui.webView.postMessage('modvigil-webview', { type: 'ERROR', payload: { message: 'Failed to send nudge messages' } });
               }
-            }
-
-            if (message.type === 'SAVE_SETTINGS') {
+            } else if (message.type === 'SAVE_SETTINGS') {
               const auth = await requireModerator(context);
               if (!auth.ok) {
                 context.ui.webView.postMessage('modvigil-webview', { type: 'ERROR', payload: { message: 'Access denied: Moderators only' } });
@@ -321,26 +345,24 @@ Devvit.addCustomPostType({
                 console.error('❌ [ModVigil] Error in SAVE_SETTINGS handler:', error);
                 context.ui.webView.postMessage('modvigil-webview', { type: 'ERROR', payload: { message: 'Failed to save settings' } });
               }
-            }
-
-            if (message.type === 'POPULATE_DEMO_DATA') {
+            } else if (message.type === 'POPULATE_DEMO_DATA') {
               const auth = await requireModerator(context);
               if (!auth.ok) {
                 context.ui.webView.postMessage('modvigil-webview', { type: 'ERROR', payload: { message: 'Access denied: Moderators only' } });
                 return;
               }
               try {
-                // AUDIT FIX: rate limit demo population so a clicking mod
-                // can't spam-stress Redis. 60s cooldown per subreddit.
+                // FIX 5: atomic SET NX — eliminates the read-then-write race condition.
+                // Returns null if key already existed (cooldown active); 'OK' if lock acquired.
                 const cooldownKey = `${auth.subreddit.id}:meta:demoCooldown`;
-                const last = await context.redis.get(cooldownKey);
-                if (last) {
+                const acquired = await context.redis.set(cooldownKey, '1', {
+                  nx: true,
+                  expiration: new Date(Date.now() + 60_000),
+                });
+                if (!acquired) {
                   context.ui.webView.postMessage('modvigil-webview', { type: 'ERROR', payload: { message: 'Demo data was just loaded. Wait a minute before reloading.' } });
                   return;
                 }
-                await context.redis.set(cooldownKey, '1', {
-                  expiration: new Date(Date.now() + 60_000),
-                });
                 const db = new ModVigilRedis(context.redis, auth.subreddit.id);
                 await populateDemoData(db, auth.subreddit.id);
                 context.ui.webView.postMessage('modvigil-webview', { type: 'DEMO_DATA_SUCCESS' });
@@ -348,9 +370,7 @@ Devvit.addCustomPostType({
                 console.error('❌ [ModVigil] Error populating demo data:', error);
                 context.ui.webView.postMessage('modvigil-webview', { type: 'ERROR', payload: { message: 'Failed to populate demo data' } });
               }
-            }
-
-            if (message.type === 'RESET_DEMO_DATA') {
+            } else if (message.type === 'RESET_DEMO_DATA') {
               const auth = await requireModerator(context);
               if (!auth.ok) {
                 context.ui.webView.postMessage('modvigil-webview', { type: 'ERROR', payload: { message: 'Access denied: Moderators only' } });
@@ -364,6 +384,13 @@ Devvit.addCustomPostType({
                 console.error('❌ [ModVigil] Error resetting demo data:', error);
                 context.ui.webView.postMessage('modvigil-webview', { type: 'ERROR', payload: { message: 'Failed to reset demo data' } });
               }
+            }
+            // FIX 1: close the top-level try/catch opened above the first if-branch
+            } catch (err) {
+              console.error('[main:onMessage] Unhandled error:', err);
+              try {
+                context.ui.webView.postMessage('modvigil-webview', { type: 'ERROR', payload: { message: 'Internal error.' } });
+              } catch { /* ignore secondary failure */ }
             }
           }}
         />

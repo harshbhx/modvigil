@@ -38,8 +38,9 @@ export const FlaggedUsers: React.FC<FlaggedUsersProps> = ({ users }) => {
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {users.map(u => {
-          const days = Math.floor((Date.now() - u.timestamp) / (1000 * 60 * 60 * 24));
-          const ago = days === 0 ? 'today' : days === 1 ? 'yesterday' : `${days}d ago`;
+          // FIX 10: guard against timestamp=0 which would show "20000d ago"
+          const days = u.timestamp ? Math.floor((Date.now() - u.timestamp) / (1000 * 60 * 60 * 24)) : -1;
+          const ago = days < 0 ? 'recently' : days === 0 ? 'today' : days === 1 ? 'yesterday' : `${days}d ago`;
           return (
             <div
               key={u.username}

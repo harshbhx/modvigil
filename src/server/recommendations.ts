@@ -161,18 +161,19 @@ function formatHourRanges(hours: number[]): string {
   if (hours.length === 0) return '';
   const sorted = [...hours].sort((a, b) => a - b);
   const ranges: string[] = [];
-  let start = sorted[0];
-  let prev = sorted[0];
-  for (let i = 1; i <= sorted.length; i++) {
+  let start: number | undefined = undefined;
+  let prev: number | undefined = undefined;
+  // FIX: loop bound was i <= sorted.length (reads sorted[sorted.length] = undefined on last pass)
+  // Changed to i < sorted.length and push the final range after the loop
+  for (let i = 0; i < sorted.length; i++) {
     const cur = sorted[i];
-    if (cur === prev + 1) {
-      prev = cur;
-    } else {
-      ranges.push(start === prev ? `${pad(start)}` : `${pad(start)}-${pad(prev)}`);
+    if (prev === undefined || cur !== prev + 1) {
+      if (start !== undefined) ranges.push(start === prev ? `${pad(start)}` : `${pad(start)}-${pad(prev!)}`);
       start = cur;
-      prev = cur;
     }
+    prev = cur;
   }
+  if (start !== undefined) ranges.push(start === prev ? `${pad(start)}` : `${pad(start)}-${pad(prev!)}`);
   return ranges.join(', ');
 }
 

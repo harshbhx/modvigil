@@ -26,12 +26,6 @@ function safeInt(s: string | undefined | null): number {
   return Number.isFinite(v) ? v : 0;
 }
 
-function safeFloat(s: string | undefined | null): number {
-  if (s == null) return 0;
-  const v = parseFloat(s);
-  return Number.isFinite(v) ? v : 0;
-}
-
 // FIX #22: Typed ActionRecord replaces `any`
 export interface ActionRecord {
   action: string;
@@ -76,7 +70,8 @@ export class ModVigilRedis {
       const totalKey = `${this.subredditId}:actions:total:${dateStr}`;
 
       const coreOps: Promise<unknown>[] = [
-        this.redis.zAdd(actionKey, { member: JSON.stringify(actionData), score: ts })
+        // FIX 1: score must be Unix SECONDS not milliseconds (schema requirement)
+        this.redis.zAdd(actionKey, { member: JSON.stringify(actionData), score: Math.floor(ts / 1000) })
           .then(() => this.redis.expire(actionKey, TTL_90D_SEC)),
         this.redis.hIncrBy(heatmapKey, hourStr, 1)
           .then(() => this.redis.expire(heatmapKey, TTL_90D_SEC)),
@@ -95,8 +90,8 @@ export class ModVigilRedis {
           this.redis.set(lastActiveKey, ts.toString(), {
             expiration: new Date(Date.now() + TTL_90D_SEC * 1000),
           }),
-          this.redis.zIncrBy(`${this.subredditId}:mod:leaderboard`, sanitizedModName, 1)
-            .then(() => this.redis.expire(`${this.subredditId}:mod:leaderboard`, TTL_90D_SEC)),
+          // FIX 4: leaderboard is all-time cumulative — no TTL
+          this.redis.zIncrBy(`${this.subredditId}:mod:leaderboard`, sanitizedModName, 1),
           // FIX #28: No TTL on mod:all — the registry must never silently expire
           this.redis.zAdd(`${this.subredditId}:mod:all`, { member: sanitizedModName, score: 0 }),
         );
@@ -111,7 +106,8 @@ export class ModVigilRedis {
   async getDailyTotals(dateStr: string): Promise<Record<string, string>> {
     try {
       const totalKey = `${this.subredditId}:actions:total:${dateStr}`;
-      return await this.redis.hGetAll(totalKey);
+      // FIX 6: null guard — hGetAll returns null when key doesn't exist
+      return (await this.redis.hGetAll(totalKey)) ?? {};
     } catch (error) {
       console.error('❌ [ModVigil Redis] Error getting daily totals:', error);
       return {};
@@ -167,9 +163,12 @@ export class ModVigilRedis {
 
       const results = await Promise.all(promises);
       results.forEach(({ day, data }) => {
+        // FIX 2: row 0 = 6 days ago, row 6 = today (client contract)
+        // i=0 means today (0 days back), so it maps to grid[6]; i=6 → grid[0]
+        const row = 6 - day;
         for (let hour = 0; hour < 24; hour++) {
           const hourStr = String(hour).padStart(2, '0');
-          grid[day][hour] = safeInt(data[hourStr]);
+          grid[row][hour] = safeInt(data[hourStr]);
         }
       });
 
@@ -256,12 +255,14 @@ export class ModVigilRedis {
       const allMods = allModsData.map(item => item.member);
 
       // FIX #14: Build set of currently-active mods to exclude ex-mods
-      let activeMods = new Set(allMods);
+      // FIX 5: lowercase both sides of the comparison to avoid case-sensitivity mismatches
+      //        between Reddit API usernames and stored Redis members
+      let activeMods = new Set(allMods.map(u => u.toLowerCase()));
       if (reddit && subredditName) {
         try {
           const listing = reddit.getModerators({ subredditName });
           const live: string[] = [];
-          for await (const u of listing) live.push(u.username);
+          for await (const u of listing) live.push(u.username.toLowerCase());
           activeMods = new Set(live);
         } catch (e) {
           console.error('[Redis:getGhostMods] Could not fetch live mod list, using cached set:', e);
@@ -279,7 +280,7 @@ export class ModVigilRedis {
 
       const ghostMods: { username: string; lastActiveDays: number }[] = [];
       for (const { m, v } of stamps) {
-        if (!activeMods.has(m)) continue; // ex-mod, skip
+        if (!activeMods.has(m.toLowerCase())) continue; // ex-mod, skip
         const t = v ? safeInt(v) : 0;
         const days = t > 0 ? Math.floor((now - t) / (1000 * 60 * 60 * 24)) : 999;
         if (days >= 30) ghostMods.push({ username: m, lastActiveDays: days });
@@ -573,10 +574,14 @@ export class ModVigilRedis {
 
   /**
    * Sets a stats counter (used for the Time Savings demo seed).
+   * FIX 3: Only sets if key doesn't already exist — never overwrites real production data.
    */
   async setStat(name: string, value: number): Promise<void> {
     try {
-      await this.redis.set(`${this.subredditId}:stats:${name}`, String(value));
+      const existing = await this.redis.get(`${this.subredditId}:stats:${name}`);
+      if (existing === null) {
+        await this.redis.set(`${this.subredditId}:stats:${name}`, String(value));
+      }
     } catch (err) {
       console.error('[Redis:setStat]', err);
     }
@@ -781,6 +786,10 @@ export class ModVigilRedis {
       ops.push(this.redis.del(`${this.subredditId}:stats:warnings_sent`));
       ops.push(this.redis.del(`${this.subredditId}:stats:digests_sent`));
       ops.push(this.redis.del(`${this.subredditId}:stats:ghost_mods_nudged`));
+      // FIX 7: also clear flagged-user sets and spike history seeded by demo
+      ops.push(this.redis.del(`${this.subredditId}:warn:flagged_users`));
+      ops.push(this.redis.del(`${this.subredditId}:warn:flagged_meta`));
+      ops.push(this.redis.del(`${this.subredditId}:spike:history`));
 
       await Promise.all(ops);
       console.log('✅ [ModVigil Redis] Demo data cleared.');

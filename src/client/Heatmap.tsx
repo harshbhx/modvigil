@@ -35,7 +35,8 @@ export const Heatmap: React.FC<HeatmapProps> = ({ data, title }) => {
   if (maxValue === 0) maxValue = 1;
 
   const getColor = (value: number) => {
-    if (value === 0) return 'var(--color-neutral-background-weak)';
+    // FIX 6: zero cells = red tint (coverage gap), not gray
+    if (value === 0) return 'rgba(220, 38, 38, 0.15)'; // #dc2626 at 0.15 opacity
     const intensity = Math.min(value / maxValue, 1);
     return `rgba(255, 69, 0, ${0.15 + intensity * 0.85})`;
   };
@@ -63,20 +64,24 @@ export const Heatmap: React.FC<HeatmapProps> = ({ data, title }) => {
             <text x={paddingLeft - 15} y={paddingTop + dayIndex * cellSize + cellSize / 1.5} textAnchor="end" fontSize="10" fontWeight="bold" fill="var(--color-neutral-content)">
               {orderedDays[dayIndex]}
             </text>
-            {row.map((value, hourIndex) => (
-              <rect
-                key={hourIndex}
-                className="cell"
-                x={paddingLeft + hourIndex * cellSize}
-                y={paddingTop + dayIndex * cellSize}
-                width={cellSize - 2}
-                height={cellSize - 2}
-                fill={getColor(value)}
-                rx="3"
-              >
-                <title>{`${orderedDays[dayIndex]} ${hourIndex}:00 UTC — ${value} actions`}</title>
-              </rect>
-            ))}
+            {row.map((_rawVal, hourIndex) => {
+              // FIX 11: guard against undefined values in inner row to prevent NaN fill
+              const value = (row && row[hourIndex]) ?? 0;
+              return (
+                <rect
+                  key={hourIndex}
+                  className="cell"
+                  x={paddingLeft + hourIndex * cellSize}
+                  y={paddingTop + dayIndex * cellSize}
+                  width={cellSize - 2}
+                  height={cellSize - 2}
+                  fill={getColor(value)}
+                  rx="3"
+                >
+                  <title>{`${orderedDays[dayIndex]} ${hourIndex}:00 UTC — ${value} actions`}</title>
+                </rect>
+              );
+            })}
           </g>
         ))}
 

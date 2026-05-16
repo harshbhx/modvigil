@@ -49,7 +49,8 @@ export const ActionItems: React.FC<ActionItemsProps> = ({ recommendations }) => 
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           {recommendations.map((r, i) => {
-            const s = STYLES[r.priority];
+            // FIX 3: fallback so an unknown priority value never crashes
+            const s = STYLES[r.priority] ?? STYLES['SUGGESTED'];
             return (
               <div
                 key={i}
