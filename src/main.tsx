@@ -1,4 +1,4 @@
-import { Devvit, type User } from '@devvit/public-api';
+import { Devvit } from '@devvit/public-api';
 import { handleModAction } from './server/pipeline.js';
 import { ModVigilRedis } from './server/redis.js';
 import { checkForSpike, updateBaseline } from './server/alerts.js';
@@ -34,19 +34,26 @@ function getNextMonday9amUTC(): Date {
   return next;
 }
 
-/** FIX #11/#12: Single auth gate, paginated mod list. */
+/**
+ * FIX #11/#12/#41: Single auth gate.
+ * AUDIT FIX: getCurrentUser() + getModerators().all() throws ServerCallRequired
+ * inside webview onMessage in Devvit 0.12.23. Use getCurrentUsername() (returns
+ * string directly, no lazy property access) and stream the moderator listing
+ * with a for-await loop, short-circuiting as soon as the current user is found
+ * — avoids the .all() server hop and is faster on large mod teams.
+ */
 async function requireModerator(
   context: Parameters<Parameters<typeof Devvit.addCustomPostType>[0]['render']>[0]
-): Promise<{ ok: true; subreddit: Awaited<ReturnType<typeof context.reddit.getCurrentSubreddit>> } | { ok: false }> {
+): Promise<{ ok: true; subreddit: Awaited<ReturnType<typeof context.reddit.getCurrentSubreddit>>; username: string } | { ok: false }> {
   try {
     const subreddit = await context.reddit.getCurrentSubreddit();
-    const currentUser = await context.reddit.getCurrentUser();
-    if (!currentUser?.username) return { ok: false };
-    // FIX #12: .all() paginates through all pages — handles mod teams > 25
-    const modsListing = await context.reddit.getModerators({ subredditName: subreddit.name });
-    const allMods: User[] = await modsListing.all();
-    if (!allMods.some((mod: User) => mod.username === currentUser.username)) return { ok: false };
-    return { ok: true, subreddit };
+    const username = await context.reddit.getCurrentUsername();
+    if (!username) return { ok: false };
+    const modsListing = context.reddit.getModerators({ subredditName: subreddit.name });
+    for await (const mod of modsListing) {
+      if (mod.username === username) return { ok: true, subreddit, username };
+    }
+    return { ok: false };
   } catch (e) {
     console.error('[main:requireModerator]', e);
     return { ok: false };
@@ -150,12 +157,16 @@ Devvit.addSchedulerJob({ name: 'weeklyDigest', onRun: generateWeeklyDigest });
 
 Devvit.addCustomPostType({
   name: 'ModVigil Dashboard',
+  height: 'tall',
   render: (context) => {
     return (
-      <vstack height="100%" width="100%">
+      <vstack height="100%" width="100%" grow padding="none" gap="none">
         <webview
           id="modvigil-webview"
           url="index.html"
+          grow
+          width="100%"
+          height="100%"
           onMessage={async (msg) => {
             if (!msg || typeof msg !== 'object' || !('type' in msg)) {
               console.error('[ModVigil] Invalid message format:', msg);
@@ -197,11 +208,12 @@ Devvit.addCustomPostType({
                 const totalActionsToday = Object.values(todayTotals).reduce((sum, v) => sum + (parseInt(v, 10) || 0), 0);
                 const topRemovalReason = topReasons.length > 0 ? topReasons[0].reason : null;
 
-                // Live mod team size for "actions per mod" recommendation
+                // Live mod team size for "actions per mod" recommendation.
+                // AUDIT FIX: stream the listing instead of .all() to avoid ServerCallRequired.
                 let modCount = 0;
                 try {
-                  const live = await context.reddit.getModerators({ subredditName: auth.subreddit.name });
-                  modCount = (await live.all()).length;
+                  const live = context.reddit.getModerators({ subredditName: auth.subreddit.name });
+                  for await (const _m of live) modCount++;
                 } catch (e) {
                   console.error('[main:GET_DASHBOARD_DATA] mod count fetch failed:', e);
                 }
