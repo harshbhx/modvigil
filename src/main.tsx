@@ -49,9 +49,13 @@ async function requireModerator(
     const subreddit = await context.reddit.getCurrentSubreddit();
     const username = await context.reddit.getCurrentUsername();
     if (!username) return { ok: false };
+    // AUDIT FIX: Reddit usernames are case-insensitive. Compare lowercased
+    // so 'Harshu' from getCurrentUsername matches 'harshu' (or any casing)
+    // returned in the moderator listing.
+    const lowerUser = username.toLowerCase();
     const modsListing = context.reddit.getModerators({ subredditName: subreddit.name });
     for await (const mod of modsListing) {
-      if (mod.username === username) return { ok: true, subreddit, username };
+      if (mod.username.toLowerCase() === lowerUser) return { ok: true, subreddit, username };
     }
     return { ok: false };
   } catch (e) {
@@ -326,6 +330,17 @@ Devvit.addCustomPostType({
                 return;
               }
               try {
+                // AUDIT FIX: rate limit demo population so a clicking mod
+                // can't spam-stress Redis. 60s cooldown per subreddit.
+                const cooldownKey = `${auth.subreddit.id}:meta:demoCooldown`;
+                const last = await context.redis.get(cooldownKey);
+                if (last) {
+                  context.ui.webView.postMessage('modvigil-webview', { type: 'ERROR', payload: { message: 'Demo data was just loaded. Wait a minute before reloading.' } });
+                  return;
+                }
+                await context.redis.set(cooldownKey, '1', {
+                  expiration: new Date(Date.now() + 60_000),
+                });
                 const db = new ModVigilRedis(context.redis, auth.subreddit.id);
                 await populateDemoData(db, auth.subreddit.id);
                 context.ui.webView.postMessage('modvigil-webview', { type: 'DEMO_DATA_SUCCESS' });

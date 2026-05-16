@@ -34,7 +34,14 @@ export async function handleModAction(
     const action = event.action || 'unknown';
     const moderatorId = event.moderator?.id || 'unknown';
     const rawModeratorName = event.moderator?.name || 'unknown';
-    const subredditId = event.subreddit?.id || context.subredditId || 'unknown';
+    // AUDIT FIX: never fall back to 'unknown' — that would land events from
+    // *every* subreddit (where this field is missing) under the same key,
+    // creating a cross-tenant data leak. Skip the action instead.
+    const subredditId = event.subreddit?.id || context.subredditId;
+    if (!subredditId) {
+      console.error('[Pipeline] Missing subredditId in ModAction event — skipping');
+      return;
+    }
     const subredditName = event.subreddit?.name || 'unknown';
     const targetId = event.targetPost?.id || event.targetComment?.id || 'unknown';
     const rawTargetAuthor = event.targetUser?.name || 'unknown';
@@ -65,7 +72,12 @@ export async function handleModAction(
     });
 
     // --- NEW MOD AUTO-ONBOARDING ---
-    if (action.toLowerCase() === 'addmoderator' && rawTargetAuthor && isValidUser(rawTargetAuthor)) {
+    // AUDIT FIX: re-validate rawTargetAuthor here — earlier validation skipped
+    // the addmoderator action, but we still need a real username to PM.
+    if (
+      action.toLowerCase() === 'addmoderator' &&
+      isValidUser(rawTargetAuthor)
+    ) {
       console.log(`🎉 [ModVigil Onboarding] New moderator added: u/${rawTargetAuthor}`);
 
       const topReasons = await db.getTopRemovalReasons(dateStr);

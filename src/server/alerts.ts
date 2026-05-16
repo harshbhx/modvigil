@@ -144,6 +144,14 @@ export async function checkForSpike(_event: unknown, context: ScheduledJobContex
 
       console.log('🚨 [ModVigil Alerts] SPIKE DETECTED! Sending modmail...');
 
+      // AUDIT FIX: Stamp the cooldown BEFORE sending the modmail. If the API
+      // call throws (rate limit, transient network), the cooldown still applies
+      // — otherwise the next 15-min run would re-detect the same spike and
+      // attempt another modmail, potentially spamming on every retry.
+      await context.redis.set(lastFiredKey, Date.now().toString(), {
+        expiration: new Date(Date.now() + 2 * 60 * 60 * 1000), // 2 hours
+      });
+
       await context.reddit.sendPrivateMessage({
         to: `r/${subreddit.name}`,
         subject: '🚨 ModVigil Alert: Activity Spike Detected',
@@ -156,11 +164,6 @@ export async function checkForSpike(_event: unknown, context: ScheduledJobContex
 This could indicate a raid, a highly controversial post, or an influx of rule-breaking content.
 
 [📊 Open ModVigil Dashboard](https://www.reddit.com/r/${subreddit.name}/about/log)`,
-      });
-
-      // FIX #38: Consistent key prefix
-      await context.redis.set(lastFiredKey, Date.now().toString(), {
-        expiration: new Date(Date.now() + 2 * 60 * 60 * 1000), // 2 hours
       });
 
       // NEW: Log to history and increment stats
