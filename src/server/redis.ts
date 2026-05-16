@@ -803,6 +803,29 @@ export class ModVigilRedis {
   }
 
   /**
+   * Seeds fake subreddit entries into global:benchmarks for demo purposes.
+   * Uses fixed IDs so they can be identified, but they will also age out
+   * naturally via the 30-day filter in getBenchmarkData (no hDel in Devvit Redis).
+   */
+  async seedBenchmarkData(entries: Array<{ id: string; weeklyActions: number; approvalRate: number; healthScore: number; teamSize: number }>): Promise<void> {
+    try {
+      const hash: Record<string, string> = {};
+      for (const sub of entries) {
+        hash[sub.id] = JSON.stringify({
+          weeklyActions: sub.weeklyActions,
+          approvalRate: sub.approvalRate,
+          healthScore: sub.healthScore,
+          teamSize: sub.teamSize,
+          updatedAt: Date.now(),
+        });
+      }
+      await this.redis.hSet('global:benchmarks', hash);
+    } catch (err) {
+      console.error('[Redis:seedBenchmarkData]', err);
+    }
+  }
+
+  /**
    * Writes this subreddit's anonymized stats to the global benchmark pool.
    * Uses a key WITHOUT subredditId prefix — intentionally shared across all installs.
    */
@@ -928,6 +951,11 @@ export class ModVigilRedis {
       ops.push(this.redis.del(`${this.subredditId}:warn:flagged_users`));
       ops.push(this.redis.del(`${this.subredditId}:warn:flagged_meta`));
       ops.push(this.redis.del(`${this.subredditId}:spike:history`));
+
+      // Benchmarking demo entries (demo_sub_1 … demo_sub_4) live in the
+      // global:benchmarks hash. Devvit Redis has no hDel, so we cannot remove
+      // individual fields. They will age out automatically — getBenchmarkData
+      // filters out any entry whose updatedAt is older than 30 days.
 
       await Promise.all(ops);
       console.log('✅ [ModVigil Redis] Demo data cleared.');

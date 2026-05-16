@@ -126,6 +126,9 @@ export async function populateDemoData(redis: ModVigilRedis, _subredditId: strin
     // ── Phase 2: Seed stats counters so TimeSavings shows realistic savings ──
     await seedDemoStats(redis, _subredditId);
 
+    // ── Benchmarking: Seed fake peer subreddits so percentile bars render ──
+    await seedBenchmarkData(redis);
+
     console.log(`🎉 [ModVigil Demo] Demo data complete! Total actions: ${totalActions}`);
     console.log(`📊 [ModVigil Demo] Breakdown: ${actionsGenerated.join(', ')}`);
     console.log(`👻 [ModVigil Demo] Ghost mod added: GhostMod_Inactive (inactive 45 days)`);
@@ -172,9 +175,21 @@ async function seedPriorPeriod(redis: ModVigilRedis, _subredditId: string, curre
 }
 
 /**
- * Seeds the cumulative stats counters so the Time Savings widget shows
- * realistic numbers right after demo install.
+ * Seeds fake peer subreddits into global:benchmarks so the Benchmarking widget
+ * shows percentile bars instead of the "Be the first to benchmark" message.
+ * Devvit Redis has no hDel — these entries age out naturally via the 30-day
+ * filter in getBenchmarkData.
  */
+async function seedBenchmarkData(redis: ModVigilRedis): Promise<void> {
+  const fakeSubreddits = [
+    { id: 'demo_sub_1', weeklyActions: 45,  approvalRate: 72, healthScore: 68, teamSize: 3  },
+    { id: 'demo_sub_2', weeklyActions: 210, approvalRate: 88, healthScore: 85, teamSize: 8  },
+    { id: 'demo_sub_3', weeklyActions: 95,  approvalRate: 81, healthScore: 74, teamSize: 5  },
+    { id: 'demo_sub_4', weeklyActions: 320, approvalRate: 65, healthScore: 55, teamSize: 12 },
+  ];
+  await redis.seedBenchmarkData(fakeSubreddits);
+  console.log('✅ [ModVigil Demo] Seeded benchmark comparison data (4 fake subreddits)');
+}
 async function seedDemoStats(redis: ModVigilRedis, _subredditId: string): Promise<void> {
   await Promise.all([
     redis.setStat('spike_alerts', 3),

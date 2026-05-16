@@ -228,6 +228,35 @@ export const HelpModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
               <li><strong>4+ removals:</strong> Flagged for manual mod review (no auto-ban)</li>
             </ul>
           </section>
+
+          {/* Raid Prediction */}
+          <section>
+            <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#FF4500', marginBottom: '8px' }}>
+              🎯 Raid Prediction
+            </h3>
+            <p style={{ margin: 0, lineHeight: '1.6', fontSize: '14px' }}>
+              Real-time risk score (0–100) predicting whether a raid or coordinated attack is incoming. Calculated from three velocity signals: activity ratio vs your historical baseline, acceleration (last 15 min vs prior 15 min), and absolute volume.
+            </p>
+            <div style={{ marginTop: '8px', padding: '12px', backgroundColor: '#F6F7F8', borderRadius: '8px', fontSize: '13px' }}>
+              <strong>NORMAL</strong> → <strong>ELEVATED</strong> → <strong>HIGH RISK</strong> → <strong>RAID LIKELY</strong>
+            </div>
+            <p style={{ marginTop: '8px', fontSize: '13px', color: '#878A8C' }}>
+              An ALERT badge pulses at score ≥ 60.
+            </p>
+          </section>
+
+          {/* Benchmarking */}
+          <section>
+            <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#FF4500', marginBottom: '8px' }}>
+              📊 Benchmarking
+            </h3>
+            <p style={{ margin: 0, lineHeight: '1.6', fontSize: '14px' }}>
+              Compares your subreddit's moderation stats against all other subreddits running ModVigil. Shows your percentile rank for weekly actions, approval rate, health score, and team size.
+            </p>
+            <div style={{ marginTop: '8px', padding: '12px', backgroundColor: '#F6F7F8', borderRadius: '8px', fontSize: '13px' }}>
+              Data is anonymized and updates on every dashboard load. Populates as more subreddits install ModVigil.
+            </div>
+          </section>
         </div>
 
         <button
