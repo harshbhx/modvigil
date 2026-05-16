@@ -3,6 +3,19 @@
 type ScheduledJobContext = any;
 import { ModVigilRedis } from './redis.js';
 
+// Safe numeric parsers — never return NaN or Infinity.
+function safeInt(s: string | undefined | null): number {
+  if (s == null) return 0;
+  const v = parseInt(s, 10);
+  return Number.isFinite(v) ? v : 0;
+}
+
+function safeFloat(s: string | undefined | null): number {
+  if (s == null) return 0;
+  const v = parseFloat(s);
+  return Number.isFinite(v) ? v : 0;
+}
+
 /**
  * Job that calculates the rolling average baseline for the current day and hour.
  * FIX #1: Uses padded hourStr consistently so writer/reader keys always match.
@@ -10,19 +23,21 @@ import { ModVigilRedis } from './redis.js';
  * FIX #24: Removed dead `db` allocation (ModVigilRedis was never used here).
  * FIX #29: Reschedule wrapped in its own try/catch so job never silently dies.
  * FIX #38: lastFiredKey uses ${subredditId}:spike:lastfired prefix convention.
+ * AUDIT FIX: All work (including getCurrentSubreddit) inside the try block so
+ * the reschedule still runs if Reddit API throws on resolve.
  */
 export async function updateBaseline(_event: unknown, context: ScheduledJobContext): Promise<void> {
-  const subreddit = await context.reddit.getCurrentSubreddit();
-  const subredditId = subreddit.id;
-  const now = new Date();
-  const dayOfWeek = (now.getUTCDay() + 6) % 7; // 0 = Mon, 6 = Sun (UTC-based)
-  const hour = now.getUTCHours();
-  // FIX #1: Always pad hour so key matches the seeded keys and checkForSpike reader
-  const hourStr = String(hour).padStart(2, '0');
-
-  console.log(`📊 [ModVigil Alerts] Updating baseline for Day ${dayOfWeek}, Hour ${hourStr}...`);
-
   try {
+    const subreddit = await context.reddit.getCurrentSubreddit();
+    const subredditId = subreddit.id;
+    const now = new Date();
+    const dayOfWeek = (now.getUTCDay() + 6) % 7; // 0 = Mon, 6 = Sun (UTC-based)
+    const hour = now.getUTCHours();
+    // FIX #1: Always pad hour so key matches the seeded keys and checkForSpike reader
+    const hourStr = String(hour).padStart(2, '0');
+
+    console.log(`📊 [ModVigil Alerts] Updating baseline for Day ${dayOfWeek}, Hour ${hourStr}...`);
+
     // FIX #7: Parallel fetch of all 7 lookback weeks
     const lookbackCounts = await Promise.all(
       Array.from({ length: 7 }, (_, idx) => {
@@ -77,17 +92,18 @@ export async function updateBaseline(_event: unknown, context: ScheduledJobConte
  * FIX #17: Elapsed ratio floored at 25% to avoid hyper-sensitivity at minute 0.
  * FIX #29: Reschedule wrapped in its own try/catch.
  * FIX #38: lastFiredKey uses consistent ${subredditId}: prefix.
+ * AUDIT FIX: All work inside try block; safeFloat/safeInt prevent NaN math.
  */
 export async function checkForSpike(_event: unknown, context: ScheduledJobContext): Promise<void> {
-  const subreddit = await context.reddit.getCurrentSubreddit();
-  const subredditId = subreddit.id;
-  const db = new ModVigilRedis(context.redis, subredditId);
-  const now = new Date();
-  const dayOfWeek = (now.getUTCDay() + 6) % 7; // 0 = Mon, 6 = Sun (UTC-based)
-  const hour = now.getUTCHours();
-  const dateStr = now.toISOString().split('T')[0];
-
   try {
+    const subreddit = await context.reddit.getCurrentSubreddit();
+    const subredditId = subreddit.id;
+    const db = new ModVigilRedis(context.redis, subredditId);
+    const now = new Date();
+    const dayOfWeek = (now.getUTCDay() + 6) % 7; // 0 = Mon, 6 = Sun (UTC-based)
+    const hour = now.getUTCHours();
+    const dateStr = now.toISOString().split('T')[0];
+
     // 1. Get current count
     const hourStr = String(hour).padStart(2, '0');
     const actionKey = `${subredditId}:actions:${dateStr}:${hourStr}`;
@@ -96,10 +112,12 @@ export async function checkForSpike(_event: unknown, context: ScheduledJobContex
     // 2. Get baseline (key uses padded hourStr — matches writer in updateBaseline)
     const baselineKey = `${subredditId}:spike:baseline:${dayOfWeek}:${hourStr}`;
     const baselineStr = await context.redis.get(baselineKey);
-    const baseline = baselineStr ? parseFloat(baselineStr) : 0;
+    const baseline = safeFloat(baselineStr);
 
     // 3. Get threshold from settings (Redis first, fallback to default)
-    const threshold = await db.getSetting('spikeThreshold', 3.0);
+    const thresholdRaw = await db.getSetting<number>('spikeThreshold', 3.0);
+    // Defense-in-depth: getSetting can return NaN if a malformed value was stored
+    const threshold = Number.isFinite(thresholdRaw) && thresholdRaw > 0 ? thresholdRaw : 3.0;
 
     // FIX #17: Floor elapsed ratio at 25% to avoid hyper-sensitivity at minute 0
     // (without floor, at minute 0 the scaled baseline is ~1.7% of normal — far too sensitive)
@@ -116,7 +134,7 @@ export async function checkForSpike(_event: unknown, context: ScheduledJobContex
       // FIX #38: Key uses consistent ${subredditId}: prefix convention
       const lastFiredKey = `${subredditId}:spike:lastfired`;
       const lastFiredStr = await context.redis.get(lastFiredKey);
-      const lastFired = lastFiredStr ? parseInt(lastFiredStr, 10) : 0;
+      const lastFired = safeInt(lastFiredStr);
       const cooldownMs = 2 * 60 * 60 * 1000; // 2 hours
 
       if (Date.now() - lastFired < cooldownMs) {

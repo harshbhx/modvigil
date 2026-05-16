@@ -83,7 +83,59 @@ export const App: React.FC = () => {
     const handleMessage = (event: MessageEvent) => {
       if (event.data?.type === 'DASHBOARD_DATA') {
         dataReceived = true;
-        setData(event.data.payload);
+        // AUDIT FIX: Defensively normalize the payload so a missing field
+        // never crashes a child component. We've seen partial responses when
+        // a downstream Redis key is missing on first install.
+        const raw = event.data.payload ?? {};
+        const normalized: DashboardData = {
+          dailyTotals: Array.isArray(raw.dailyTotals) ? raw.dailyTotals : [],
+          heatmapData: Array.isArray(raw.heatmapData) && raw.heatmapData.length === 7
+            ? raw.heatmapData
+            : Array(7).fill(0).map(() => Array(24).fill(0)),
+          leaderboard: Array.isArray(raw.leaderboard) ? raw.leaderboard : [],
+          healthScore: Number.isFinite(raw.healthScore) ? raw.healthScore : 0,
+          ghostMods: Array.isArray(raw.ghostMods) ? raw.ghostMods : [],
+          totalActionsToday: Number.isFinite(raw.totalActionsToday) ? raw.totalActionsToday : 0,
+          approvalRate: Number.isFinite(raw.approvalRate) ? raw.approvalRate : 0,
+          topRemovalReason: typeof raw.topRemovalReason === 'string' ? raw.topRemovalReason : null,
+          currentSettings: raw.currentSettings && typeof raw.currentSettings === 'object'
+            ? {
+                spikeThreshold: Number.isFinite(raw.currentSettings.spikeThreshold) ? raw.currentSettings.spikeThreshold : 3.0,
+                transparencyMode: raw.currentSettings.transparencyMode === true,
+                enableWarnings: raw.currentSettings.enableWarnings !== false,
+              }
+            : { spikeThreshold: 3.0, transparencyMode: false, enableWarnings: true },
+          stats: raw.stats && typeof raw.stats === 'object'
+            ? {
+                spikeAlerts: Number.isFinite(raw.stats.spikeAlerts) ? raw.stats.spikeAlerts : 0,
+                warningsSent: Number.isFinite(raw.stats.warningsSent) ? raw.stats.warningsSent : 0,
+                digestsSent: Number.isFinite(raw.stats.digestsSent) ? raw.stats.digestsSent : 0,
+                ghostNudges: Number.isFinite(raw.stats.ghostNudges) ? raw.stats.ghostNudges : 0,
+              }
+            : { spikeAlerts: 0, warningsSent: 0, digestsSent: 0, ghostNudges: 0 },
+          installDate: Number.isFinite(raw.installDate) ? raw.installDate : Date.now(),
+          modInsights: Array.isArray(raw.modInsights) ? raw.modInsights : [],
+          trend: raw.trend && typeof raw.trend === 'object'
+            ? {
+                currentVolume: Number.isFinite(raw.trend.currentVolume) ? raw.trend.currentVolume : 0,
+                previousVolume: Number.isFinite(raw.trend.previousVolume) ? raw.trend.previousVolume : 0,
+                volumeChange: Number.isFinite(raw.trend.volumeChange) ? raw.trend.volumeChange : null,
+                currentApprovalRate: Number.isFinite(raw.trend.currentApprovalRate) ? raw.trend.currentApprovalRate : 0,
+                previousApprovalRate: Number.isFinite(raw.trend.previousApprovalRate) ? raw.trend.previousApprovalRate : 0,
+                approvalChange: Number.isFinite(raw.trend.approvalChange) ? raw.trend.approvalChange : null,
+                currentDaysActive: Number.isFinite(raw.trend.currentDaysActive) ? raw.trend.currentDaysActive : 0,
+                previousDaysActive: Number.isFinite(raw.trend.previousDaysActive) ? raw.trend.previousDaysActive : 0,
+              }
+            : {
+                currentVolume: 0, previousVolume: 0, volumeChange: null,
+                currentApprovalRate: 0, previousApprovalRate: 0, approvalChange: null,
+                currentDaysActive: 0, previousDaysActive: 0,
+              },
+          recommendations: Array.isArray(raw.recommendations) ? raw.recommendations : [],
+          autoModSuggestions: Array.isArray(raw.autoModSuggestions) ? raw.autoModSuggestions : [],
+          flaggedUsers: Array.isArray(raw.flaggedUsers) ? raw.flaggedUsers : [],
+        };
+        setData(normalized);
         // FIX #33: Record when data was last received
         setUpdatedAt(Date.now());
         setLoading(false);

@@ -9,16 +9,17 @@ import { ModVigilRedis } from './redis.js';
  * FIX #23: Typed context replaces `any`.
  * FIX #29: Reschedule wrapped in its own try/catch.
  * FIX #30: Approval rate aggregated over 7 days, not just today.
+ * AUDIT FIX: All work (including getCurrentSubreddit) inside the try block so
+ * the reschedule still runs if Reddit API throws on resolve.
  */
 export async function generateWeeklyDigest(_event: unknown, context: ScheduledJobContext): Promise<void> {
-  const subreddit = await context.reddit.getCurrentSubreddit();
-  const subredditId = subreddit.id;
-  const subredditName = subreddit.name;
-  const db = new ModVigilRedis(context.redis, subredditId);
-
-  console.log(`📊 [ModVigil Digest] Generating weekly digest for r/${subredditName}...`);
-
   try {
+    const subreddit = await context.reddit.getCurrentSubreddit();
+    const subredditId = subreddit.id;
+    const subredditName = subreddit.name;
+    const db = new ModVigilRedis(context.redis, subredditId);
+
+    console.log(`📊 [ModVigil Digest] Generating weekly digest for r/${subredditName}...`);
     // 1. Fetch last 7 days of data
     const last7Days = await db.getLast7DaysTotals();
     const totalActions = last7Days.reduce((sum, d) => sum + d.value, 0);
@@ -74,7 +75,6 @@ export async function generateWeeklyDigest(_event: unknown, context: ScheduledJo
     const approvals7 = approvalsArr.reduce((s: number, v: string | undefined) => s + (parseInt(v ?? '0', 10) || 0), 0);
     const approvalRate = total7 > 0 ? (approvals7 / total7) * 100 : 0;
 
-    const nowStr = new Date().toISOString().split('T')[0];
     // FIX (audit #4): Aggregate over 7 days so the weekly digest's top reason
     // reflects the actual week, not just today.
     const topReasons = await db.getTopRemovalReasons7d();

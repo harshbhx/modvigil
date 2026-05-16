@@ -491,6 +491,8 @@ export class ModVigilRedis {
 
   /**
    * Gets a setting from Redis, with fallback to default value.
+   * AUDIT FIX: defensive number parse — never returns NaN even if a malformed
+   * value somehow lands in Redis (e.g. partial write, manual edit).
    */
   async getSetting<T>(key: string, defaultValue: T): Promise<T> {
     try {
@@ -499,7 +501,10 @@ export class ModVigilRedis {
 
       if (value === null || value === undefined) return defaultValue;
 
-      if (typeof defaultValue === 'number') return parseFloat(value) as T;
+      if (typeof defaultValue === 'number') {
+        const n = parseFloat(value);
+        return (Number.isFinite(n) ? n : defaultValue) as T;
+      }
       if (typeof defaultValue === 'boolean') return (value === 'true') as T;
       return value as T;
     } catch (error) {
