@@ -31,7 +31,7 @@ export async function updateBaseline(_event: unknown, context: ScheduledJobConte
     const subreddit = await context.reddit.getCurrentSubreddit();
     const subredditId = subreddit.id;
     const now = new Date();
-    const dayOfWeek = (now.getUTCDay() + 6) % 7; // 0 = Mon, 6 = Sun (UTC-based)
+    const dayOfWeek = now.getUTCDay(); // 0 = Sun, 6 = Sat — matches schema and raidPrediction.ts
     const hour = now.getUTCHours();
     // FIX #1: Always pad hour so key matches the seeded keys and checkForSpike reader
     const hourStr = String(hour).padStart(2, '0');
@@ -100,7 +100,7 @@ export async function checkForSpike(_event: unknown, context: ScheduledJobContex
     const subredditId = subreddit.id;
     const db = new ModVigilRedis(context.redis, subredditId);
     const now = new Date();
-    const dayOfWeek = (now.getUTCDay() + 6) % 7; // 0 = Mon, 6 = Sun (UTC-based)
+    const dayOfWeek = now.getUTCDay(); // 0 = Sun, 6 = Sat — matches schema and raidPrediction.ts
     const hour = now.getUTCHours();
     const dateStr = now.toISOString().split('T')[0];
 

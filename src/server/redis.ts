@@ -307,6 +307,9 @@ export class ModVigilRedis {
   /**
    * Calculates the approval rate for a given date.
    * FIX #27: Uses safeInt to prevent NaN.
+   * FIX: Denominator is approvals+removals only — not all action types.
+   *      Bans, locks, stickies, etc. are not content decisions and must not
+   *      dilute the rate.
    */
   async getApprovalRate(dateStr: string): Promise<number> {
     try {
@@ -314,11 +317,13 @@ export class ModVigilRedis {
       const totals = await this.getDailyTotals(dateStr);
       const approvalData = await this.redis.hGet(approvalKey, 'count');
 
-      const totalActions = Object.values(totals).reduce((sum, v) => sum + safeInt(v), 0);
       const approvals = safeInt(approvalData);
+      // Only count content-decision actions as the denominator
+      const REMOVAL_ACTIONS = ['removelink', 'removecomment', 'spamlink', 'spamcomment', 'banuser'];
+      const removals = REMOVAL_ACTIONS.reduce((sum, action) => sum + safeInt(totals[action]), 0);
 
-      if (totalActions === 0) return 0;
-      return (approvals / totalActions) * 100;
+      if ((approvals + removals) === 0) return 0;
+      return Math.round((approvals / (approvals + removals)) * 100);
     } catch (error) {
       console.error('❌ [ModVigil Redis] Error getting approval rate:', error);
       return 0;

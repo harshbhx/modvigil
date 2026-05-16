@@ -68,12 +68,15 @@ export async function generateWeeklyDigest(_event: unknown, context: ScheduledJo
         )
       ),
     ]);
-    const total7 = totalsArr.reduce(
-      (s, t) => s + Object.values(t).reduce((x, v) => x + (parseInt(v, 10) || 0), 0),
+    // FIX: denominator is approvals+removals only — not all action types.
+    // Bans, locks, stickies etc. are not content decisions and must not dilute the rate.
+    const REMOVAL_ACTIONS = ['removelink', 'removecomment', 'spamlink', 'spamcomment', 'banuser'];
+    const removals7 = totalsArr.reduce(
+      (s, t) => s + REMOVAL_ACTIONS.reduce((x, a) => x + (parseInt(t[a] ?? '0', 10) || 0), 0),
       0
     );
     const approvals7 = approvalsArr.reduce((s: number, v: string | undefined) => s + (parseInt(v ?? '0', 10) || 0), 0);
-    const approvalRate = total7 > 0 ? (approvals7 / total7) * 100 : 0;
+    const approvalRate = (approvals7 + removals7) > 0 ? (approvals7 / (approvals7 + removals7)) * 100 : 0;
 
     // FIX (audit #4): Aggregate over 7 days so the weekly digest's top reason
     // reflects the actual week, not just today.

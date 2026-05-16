@@ -129,6 +129,11 @@ export async function populateDemoData(redis: ModVigilRedis, _subredditId: strin
     // ── Benchmarking: Seed fake peer subreddits so percentile bars render ──
     await seedBenchmarkData(redis);
 
+    // ── Raid prediction: Seed 14 recent actions so the widget shows ELEVATED/HIGH RISK ──
+    // Without this, demo mode always shows score=0/NORMAL because the sorted-set
+    // time-window query finds no entries in the last 30 minutes.
+    await seedRecentActions(redis);
+
     console.log(`🎉 [ModVigil Demo] Demo data complete! Total actions: ${totalActions}`);
     console.log(`📊 [ModVigil Demo] Breakdown: ${actionsGenerated.join(', ')}`);
     console.log(`👻 [ModVigil Demo] Ghost mod added: GhostMod_Inactive (inactive 45 days)`);
@@ -198,4 +203,43 @@ async function seedDemoStats(redis: ModVigilRedis, _subredditId: string): Promis
     redis.setStat('ghost_mods_nudged', 2),
   ]);
   console.log('✅ [ModVigil Demo] Seeded stats counters for Time Savings widget');
+}
+
+/**
+ * Seeds 14 recent actions into the current hour's sorted set so the raid
+ * prediction widget shows ELEVATED or HIGH RISK instead of score=0/NORMAL.
+ * Without this, demo mode always shows NORMAL because getActionCountInWindow
+ * finds no entries in the last 30 minutes.
+ *
+ * Cleanup: clearDemoData() already deletes the entire
+ * `actions:{today}:{hour}` key, so no extra zRem logic is needed here.
+ */
+async function seedRecentActions(redis: ModVigilRedis): Promise<void> {
+  const nowSec = Math.floor(Date.now() / 1000);
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const hourStr = String(new Date().getUTCHours()).padStart(2, '0');
+
+  // 14 actions spread over the last 12 minutes (~one every 50 seconds).
+  // 14 actions in 15 min triggers the absolute-volume signal (+5 pts) and,
+  // combined with prev15min=0, the "sudden burst" signal (+15 pts) → score ≥ 20
+  // which lands in ELEVATED territory.
+  const ops: Promise<void>[] = [];
+  for (let i = 0; i < 14; i++) {
+    const actionSec = nowSec - i * 50; // spread backwards ~50 s apart
+    const actionData: ActionRecord = {
+      action: i % 3 === 0 ? 'removelink' : i % 3 === 1 ? 'approvelink' : 'removecomment',
+      moderator: { name: 'ModChampion' },
+      targetUser: `demo_user_${i}`,
+      targetPost: `t3_demo_recent_${i}`,
+      timestamp: actionSec * 1000, // recordAction expects ms
+    };
+    // Only seed if the action still falls within the current hour bucket
+    const actionHour = new Date(actionSec * 1000).getUTCHours();
+    const actionDate = new Date(actionSec * 1000).toISOString().slice(0, 10);
+    if (actionDate === todayStr && String(actionHour).padStart(2, '0') === hourStr) {
+      ops.push(redis.recordAction(actionData));
+    }
+  }
+  await Promise.all(ops);
+  console.log('✅ [ModVigil Demo] Seeded 14 recent actions for raid prediction widget');
 }
