@@ -4,6 +4,8 @@ import { ModVigilRedis } from './server/redis.js';
 import { checkForSpike, updateBaseline } from './server/alerts.js';
 import { generateWeeklyDigest } from './server/digest.js';
 import { populateDemoData } from './server/demoData.js';
+import { buildRecommendations } from './server/recommendations.js';
+import { buildAutoModSuggestions } from './server/autoModSuggestions.js';
 
 /**
  * FIX #4:  Menu item caches dashboard post id — no longer creates a new post on every click.
@@ -172,7 +174,7 @@ Devvit.addCustomPostType({
                 const db = new ModVigilRedis(context.redis, subredditId);
                 const dateStr = new Date().toISOString().split('T')[0];
 
-                const [dailyTotals, heatmapData, leaderboard, healthScore, approvalRate, topReasons, ghostMods, spikeThreshold, transparencyMode, enableWarnings] = await Promise.all([
+                const [dailyTotals, heatmapData, leaderboard, healthScore, approvalRate, topReasons, ghostMods, spikeThreshold, transparencyMode, enableWarnings, stats, installDate, modInsights, trend, flaggedUsers, autoModSuggestions] = await Promise.all([
                   db.getLast7DaysTotals(),
                   db.getHeatmapData(),
                   db.getLeaderboard7d(),
@@ -183,11 +185,37 @@ Devvit.addCustomPostType({
                   db.getSetting('spikeThreshold', 3.0),
                   db.getSetting('transparencyMode', false),
                   db.getSetting('enableWarnings', true),
+                  db.getStats(),
+                  db.getInstallDate(),
+                  db.getModInsights(),
+                  db.getTrendComparison(),
+                  db.getFlaggedUsers(),
+                  buildAutoModSuggestions(db),
                 ]);
 
                 const todayTotals = await db.getDailyTotals(dateStr);
                 const totalActionsToday = Object.values(todayTotals).reduce((sum, v) => sum + (parseInt(v, 10) || 0), 0);
                 const topRemovalReason = topReasons.length > 0 ? topReasons[0].reason : null;
+
+                // Live mod team size for "actions per mod" recommendation
+                let modCount = 0;
+                try {
+                  const live = await context.reddit.getModerators({ subredditName: auth.subreddit.name });
+                  modCount = (await live.all()).length;
+                } catch (e) {
+                  console.error('[main:GET_DASHBOARD_DATA] mod count fetch failed:', e);
+                }
+
+                const totalActions7d = dailyTotals.reduce((s, d) => s + d.value, 0);
+                const recommendations = await buildRecommendations(db, dateStr, {
+                  heatmap: heatmapData,
+                  approvalRate,
+                  ghostModCount: ghostMods.length,
+                  flaggedUserCount: flaggedUsers.length,
+                  totalActions7d,
+                  modCount,
+                  topRemovalReasons: topReasons,
+                });
 
                 context.ui.webView.postMessage('modvigil-webview', {
                   type: 'DASHBOARD_DATA',
@@ -203,8 +231,16 @@ Devvit.addCustomPostType({
                     topRemovalReason,
                     // FIX #8: Return actual saved settings so SettingsModal shows real values
                     currentSettings: { spikeThreshold, transparencyMode, enableWarnings },
+                    // Phase 2 additions
+                    stats,
+                    installDate,
+                    modInsights,
+                    trend,
+                    recommendations,
+                    autoModSuggestions,
+                    flaggedUsers,
                   },
-                });
+                } as unknown as Parameters<typeof context.ui.webView.postMessage>[1]);
               } catch (error) {
                 console.error('❌ [ModVigil] Error fetching dashboard data:', error);
                 context.ui.webView.postMessage('modvigil-webview', { type: 'ERROR', payload: { message: 'Failed to load dashboard data' } });

@@ -116,6 +116,15 @@ export async function populateDemoData(redis: ModVigilRedis, _subredditId: strin
     await redis.addMod('GhostMod_Inactive');
 
     const totalActions = actionsGenerated.reduce((sum, n) => sum + n, 0);
+
+    // ── Phase 2: Seed prior-period totals so TrendInsights has data to compare ──
+    // We don't need full per-action records — only daily aggregates, since
+    // getTrendComparison reads actions:total:{date} and actions:approvals:{date}.
+    await seedPriorPeriod(redis, _subredditId, totalActions);
+
+    // ── Phase 2: Seed stats counters so TimeSavings shows realistic savings ──
+    await seedDemoStats(redis, _subredditId);
+
     console.log(`🎉 [ModVigil Demo] Demo data complete! Total actions: ${totalActions}`);
     console.log(`📊 [ModVigil Demo] Breakdown: ${actionsGenerated.join(', ')}`);
     console.log(`👻 [ModVigil Demo] Ghost mod added: GhostMod_Inactive (inactive 45 days)`);
@@ -124,4 +133,52 @@ export async function populateDemoData(redis: ModVigilRedis, _subredditId: strin
     console.error('❌ [ModVigil Demo] Error populating demo data:', error);
     throw error;
   }
+}
+
+/**
+ * Seeds 7 days of aggregate data 28 days ago so TrendInsights has a prior
+ * period to compare against. Slightly lower volume than the current week so
+ * judges see a realistic upward trend.
+ */
+async function seedPriorPeriod(redis: ModVigilRedis, _subredditId: string, currentTotal: number): Promise<void> {
+  const targetTotal = Math.max(50, Math.floor(currentTotal * 0.75));
+  const perDay = Math.max(5, Math.floor(targetTotal / 7));
+  const now = new Date();
+
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - (i + 28));
+    const dateStr = d.toISOString().split('T')[0];
+
+    const removelink = Math.floor(perDay * 0.40);
+    const approvelink = Math.floor(perDay * 0.30);
+    const removecomment = Math.floor(perDay * 0.20);
+    const approvecomment = Math.floor(perDay * 0.05);
+    const spamlink = Math.max(1, Math.floor(perDay * 0.05));
+
+    const counts: Record<string, number> = {
+      removelink,
+      approvelink,
+      removecomment,
+      approvecomment,
+      spamlink,
+    };
+    const approvals = approvelink + approvecomment;
+    await redis.seedDailyAggregate(dateStr, counts, approvals);
+  }
+  console.log('✅ [ModVigil Demo] Seeded 7-day prior-period aggregates (28 days ago)');
+}
+
+/**
+ * Seeds the cumulative stats counters so the Time Savings widget shows
+ * realistic numbers right after demo install.
+ */
+async function seedDemoStats(redis: ModVigilRedis, _subredditId: string): Promise<void> {
+  await Promise.all([
+    redis.setStat('spike_alerts', 3),
+    redis.setStat('warnings_sent', 18),
+    redis.setStat('digests_sent', 4),
+    redis.setStat('ghost_mods_nudged', 2),
+  ]);
+  console.log('✅ [ModVigil Demo] Seeded stats counters for Time Savings widget');
 }

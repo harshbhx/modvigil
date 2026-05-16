@@ -460,6 +460,199 @@ export class ModVigilRedis {
   }
 
   /**
+   * Seeds an aggregate-only day for prior-period trend comparison.
+   * Writes only the daily total hash + approval counter — does NOT create
+   * per-action records (we never need to read those for old data).
+   */
+  async seedDailyAggregate(
+    dateStr: string,
+    actionCounts: Record<string, number>,
+    approvalCount: number
+  ): Promise<void> {
+    try {
+      const totalKey = `${this.subredditId}:actions:total:${dateStr}`;
+      const ops: Promise<unknown>[] = [];
+      for (const [action, count] of Object.entries(actionCounts)) {
+        if (count > 0) ops.push(this.redis.hIncrBy(totalKey, action, count));
+      }
+      ops.push(this.redis.expire(totalKey, TTL_90D_SEC));
+      if (approvalCount > 0) {
+        const approvalKey = `${this.subredditId}:actions:approvals:${dateStr}`;
+        ops.push(
+          this.redis.hIncrBy(approvalKey, 'count', approvalCount).then(() => this.redis.expire(approvalKey, TTL_90D_SEC))
+        );
+      }
+      await Promise.all(ops);
+    } catch (err) {
+      console.error('[Redis:seedDailyAggregate]', err);
+    }
+  }
+
+  /**
+   * Sets a stats counter (used for the Time Savings demo seed).
+   */
+  async setStat(name: string, value: number): Promise<void> {
+    try {
+      await this.redis.set(`${this.subredditId}:stats:${name}`, String(value));
+    } catch (err) {
+      console.error('[Redis:setStat]', err);
+    }
+  }
+
+  /**
+   * Returns the install timestamp (ms) so dashboards can show "since install" totals.
+   */
+  async getInstallDate(): Promise<number> {
+    try {
+      const v = await this.redis.get(`${this.subredditId}:meta:install`);
+      if (!v) return Date.now();
+      const t = Date.parse(v);
+      return Number.isFinite(t) ? t : Date.now();
+    } catch {
+      return Date.now();
+    }
+  }
+
+  /**
+   * Per-moderator analytics for the last 7 days: approval rate, post vs comment
+   * specialization, total actions, days active. Used by ModInsights.
+   */
+  async getModInsights(): Promise<{
+    username: string;
+    total: number;
+    approvalRate: number;
+    posts: number;
+    comments: number;
+    daysActive: number;
+  }[]> {
+    try {
+      const days: string[] = [];
+      for (let i = 0; i < 7; i++) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        days.push(d.toISOString().split('T')[0]);
+      }
+      const allModsData = await this.redis.zRange(`${this.subredditId}:mod:all`, 0, -1);
+      const allMods = allModsData.map(item => item.member);
+
+      const results = await Promise.all(
+        allMods.map(async (m) => {
+          const u = this.sanitizeUsername(m);
+          const dailyHashes = await Promise.all(
+            days.map(d => this.redis.hGetAll(`${this.subredditId}:mod:activity:${u}:${d}`))
+          );
+          let total = 0;
+          let approvals = 0;
+          let posts = 0;
+          let comments = 0;
+          let daysActive = 0;
+          for (const h of dailyHashes) {
+            let dayTotal = 0;
+            for (const [action, countStr] of Object.entries(h)) {
+              const c = safeInt(countStr);
+              dayTotal += c;
+              total += c;
+              const a = action.toLowerCase();
+              if (a === 'approvelink' || a === 'approvecomment') approvals += c;
+              if (a.endsWith('link')) posts += c;
+              if (a.endsWith('comment')) comments += c;
+            }
+            if (dayTotal > 0) daysActive++;
+          }
+          const approvalRate = total > 0 ? (approvals / total) * 100 : 0;
+          return { username: m, total, approvalRate, posts, comments, daysActive };
+        })
+      );
+
+      return results
+        .filter(r => r.total > 0)
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 8);
+    } catch (err) {
+      console.error('[Redis:getModInsights]', err);
+      return [];
+    }
+  }
+
+  /**
+   * Aggregates volume + approval rate for the current 7-day window vs the 7-day
+   * window 28 days ago. Used by TrendInsights.
+   */
+  async getTrendComparison(): Promise<{
+    currentVolume: number;
+    previousVolume: number;
+    volumeChange: number | null;
+    currentApprovalRate: number;
+    previousApprovalRate: number;
+    approvalChange: number | null;
+    currentDaysActive: number;
+    previousDaysActive: number;
+  }> {
+    try {
+      const buildRange = (offsetDays: number) => {
+        const arr: string[] = [];
+        for (let i = 0; i < 7; i++) {
+          const d = new Date();
+          d.setDate(d.getDate() - (i + offsetDays));
+          arr.push(d.toISOString().split('T')[0]);
+        }
+        return arr;
+      };
+      const current = buildRange(0);
+      const previous = buildRange(28);
+
+      const compute = async (dates: string[]) => {
+        const [totals, approvals] = await Promise.all([
+          Promise.all(dates.map(d => this.redis.hGetAll(`${this.subredditId}:actions:total:${d}`))),
+          Promise.all(dates.map(d => this.redis.hGet(`${this.subredditId}:actions:approvals:${d}`, 'count'))),
+        ]);
+        let volume = 0;
+        let approvalCount = 0;
+        let daysActive = 0;
+        totals.forEach(h => {
+          const dayTotal = Object.values(h).reduce((s, v) => s + safeInt(v), 0);
+          volume += dayTotal;
+          if (dayTotal > 0) daysActive++;
+        });
+        approvals.forEach(v => { approvalCount += safeInt(v); });
+        const approvalRate = volume > 0 ? (approvalCount / volume) * 100 : 0;
+        return { volume, approvalRate, daysActive };
+      };
+
+      const [cur, prev] = await Promise.all([compute(current), compute(previous)]);
+
+      const pct = (curV: number, prevV: number): number | null => {
+        if (prevV === 0) return null;
+        return ((curV - prevV) / prevV) * 100;
+      };
+
+      return {
+        currentVolume: cur.volume,
+        previousVolume: prev.volume,
+        volumeChange: pct(cur.volume, prev.volume),
+        currentApprovalRate: cur.approvalRate,
+        previousApprovalRate: prev.approvalRate,
+        approvalChange:
+          prev.approvalRate === 0 ? null : cur.approvalRate - prev.approvalRate,
+        currentDaysActive: cur.daysActive,
+        previousDaysActive: prev.daysActive,
+      };
+    } catch (err) {
+      console.error('[Redis:getTrendComparison]', err);
+      return {
+        currentVolume: 0,
+        previousVolume: 0,
+        volumeChange: null,
+        currentApprovalRate: 0,
+        previousApprovalRate: 0,
+        approvalChange: null,
+        currentDaysActive: 0,
+        previousDaysActive: 0,
+      };
+    }
+  }
+
+  /**
    * FIX #3: Clears all demo data written by populateDemoData so production state stays clean.
    */
   async clearDemoData(): Promise<void> {
@@ -486,6 +679,21 @@ export class ModVigilRedis {
           ops.push(this.redis.del(`${this.subredditId}:actions:${ds}:${hs}`));
         }
       }
+
+      // Phase 2: also clear the prior-period aggregates seeded by demo data
+      for (let i = 0; i < 7; i++) {
+        const d = new Date();
+        d.setDate(d.getDate() - (i + 28));
+        const ds = d.toISOString().split('T')[0];
+        ops.push(this.redis.del(`${this.subredditId}:actions:total:${ds}`));
+        ops.push(this.redis.del(`${this.subredditId}:actions:approvals:${ds}`));
+      }
+
+      // Phase 2: clear stats counters seeded by demo
+      ops.push(this.redis.del(`${this.subredditId}:stats:spike_alerts`));
+      ops.push(this.redis.del(`${this.subredditId}:stats:warnings_sent`));
+      ops.push(this.redis.del(`${this.subredditId}:stats:digests_sent`));
+      ops.push(this.redis.del(`${this.subredditId}:stats:ghost_mods_nudged`));
 
       await Promise.all(ops);
       console.log('✅ [ModVigil Redis] Demo data cleared.');

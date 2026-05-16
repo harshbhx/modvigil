@@ -8,6 +8,12 @@ import { HealthScore } from './HealthScore.js';
 import { QuickStats } from './QuickStats.js';
 import { HelpModal } from './HelpModal.js';
 import { SettingsModal } from './SettingsModal.js';
+import { TimeSavings } from './TimeSavings.js';
+import { ActionItems, type Recommendation } from './ActionItems.js';
+import { TrendInsights } from './TrendInsights.js';
+import { ModInsights, type ModInsight } from './ModInsights.js';
+import { AutoModSuggestions, type AutoModSuggestion } from './AutoModSuggestions.js';
+import { FlaggedUsers, type FlaggedUser } from './FlaggedUsers.js';
 
 // FIX #8: currentSettings added to DashboardData so SettingsModal shows real saved values
 interface DashboardData {
@@ -20,6 +26,23 @@ interface DashboardData {
   approvalRate: number;
   topRemovalReason: string | null;
   currentSettings: { spikeThreshold: number; transparencyMode: boolean; enableWarnings: boolean };
+  // Phase 2
+  stats: { spikeAlerts: number; warningsSent: number; digestsSent: number; ghostNudges: number };
+  installDate: number;
+  modInsights: ModInsight[];
+  trend: {
+    currentVolume: number;
+    previousVolume: number;
+    volumeChange: number | null;
+    currentApprovalRate: number;
+    previousApprovalRate: number;
+    approvalChange: number | null;
+    currentDaysActive: number;
+    previousDaysActive: number;
+  };
+  recommendations: Recommendation[];
+  autoModSuggestions: AutoModSuggestion[];
+  flaggedUsers: FlaggedUser[];
 }
 
 const SYSTEM_FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
@@ -253,6 +276,10 @@ export const App: React.FC = () => {
       <QuickStats totalActionsToday={data.totalActionsToday} approvalRate={data.approvalRate} topRemovalReason={data.topRemovalReason} />
 
       <main style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+        <ActionItems recommendations={data.recommendations} />
+
+        <FlaggedUsers users={data.flaggedUsers} />
+
         {data.ghostMods.length > 0 && (
           <section style={{ backgroundColor: 'rgba(255, 176, 0, 0.1)', padding: '20px 25px', borderRadius: '16px', border: '1px solid var(--color-warning)', boxShadow: '0 4px 8px rgba(255,176,0,0.1)', display: 'flex', alignItems: 'center', gap: '20px' }}>
             <div style={{ fontSize: '32px' }}>👻</div>
@@ -272,6 +299,27 @@ export const App: React.FC = () => {
         )}
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(450px, 1fr))', gap: '24px' }}>
+          <TimeSavings
+            spikeAlerts={data.stats.spikeAlerts}
+            warningsSent={data.stats.warningsSent}
+            digestsSent={data.stats.digestsSent}
+            ghostNudges={data.stats.ghostNudges}
+            installDate={data.installDate}
+          />
+          <TrendInsights
+            currentVolume={data.trend.currentVolume}
+            previousVolume={data.trend.previousVolume}
+            volumeChange={data.trend.volumeChange}
+            currentApprovalRate={data.trend.currentApprovalRate}
+            previousApprovalRate={data.trend.previousApprovalRate}
+            approvalChange={data.trend.approvalChange}
+            currentDaysActive={data.trend.currentDaysActive}
+            previousDaysActive={data.trend.previousDaysActive}
+            healthScore={data.healthScore}
+          />
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(450px, 1fr))', gap: '24px' }}>
           <section style={{ backgroundColor: 'var(--color-neutral-background-strong)', padding: '24px', borderRadius: '16px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', border: '1px solid var(--color-neutral-border)' }}>
             <BarChart data={data.dailyTotals} title="7-Day Activity Radar" />
           </section>
@@ -279,6 +327,10 @@ export const App: React.FC = () => {
             <Leaderboard data={data.leaderboard} />
           </section>
         </div>
+
+        <ModInsights mods={data.modInsights} teamApprovalRate={data.trend.currentApprovalRate} />
+
+        <AutoModSuggestions suggestions={data.autoModSuggestions} />
 
         <section style={{ backgroundColor: 'white', padding: '24px', borderRadius: '16px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', border: '1px solid #EDEFF1' }}>
           <Heatmap data={data.heatmapData} title="Subreddit Coverage Heatmap (24/7 Matrix)" />
