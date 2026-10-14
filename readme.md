@@ -5,7 +5,7 @@
 [![Devvit](https://img.shields.io/badge/Built%20on-Devvit-FF4500?style=for-the-badge&logo=reddit)](https://developers.reddit.com)
 [![Hackathon](https://img.shields.io/badge/Reddit%20Mod%20Tools%20Hackathon-2026-FF4500?style=for-the-badge)](https://mod-tools-migration.devpost.com)
 [![TypeScript](https://img.shields.io/badge/TypeScript-Strict-3178C6?style=for-the-badge&logo=typescript)](https://www.typescriptlang.org)
-[![Beast Mode](https://img.shields.io/badge/Status-Beast%20Mode-red?style=for-the-badge)](https://github.com/harshubhanushali07/modvigil)
+[![Beast Mode](https://img.shields.io/badge/Status-Beast%20Mode-red?style=for-the-badge)](https://github.com/harshbhx/modvigil)
 
 ---
 
@@ -122,7 +122,7 @@ To ensure **absolute stability** for the hackathon judging phase, a deep technic
 
 ### Setup
 ```bash
-git clone https://github.com/harshubhanushali07/modvigil
+git clone https://github.com/harshbhx/modvigil
 cd modvigil
 npm install
 devvit login
